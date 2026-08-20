@@ -34,9 +34,13 @@ const ACTIONS = [
   'waitFor',
 ];
 
-// Actions allowed inside an assertion block — only assertions belong there,
-// never a plain interaction step or a nested test.
+// Actions allowed inside an assertion block — only assertions belong there.
 const ASSERTION_ACTIONS = ACTIONS.filter((action) => action.startsWith('assert'));
+
+// Actions allowed inside a step block — the complement of the above, so a
+// step block can never hold an assertion (that's what assertion blocks are
+// for — the two are deliberately mutually exclusive).
+const STEP_ACTIONS = ACTIONS.filter((action) => !action.startsWith('assert'));
 
 // Per-action lookup of which of (target, selection, value) apply.
 // Any action missing from this map falls back to DEFAULT_FIELD_CONFIG below.
@@ -78,19 +82,29 @@ function getFieldConfig(action) {
    STATE
    In-memory only, per the spec (no localStorage).
 
-   Steps live in one of three places:
-   - `scenario.sharedSteps`: added before any test block exists. Written
-     once in the export, not repeated per test. Always plain steps.
-   - `scenario.tests[n].steps`: once "+ New Test" has been clicked at least
-     once, every "+ Next step" click adds to the MOST RECENTLY created test
-     block (the currently "open" envelope). Clicking "+ New Test" again
-     closes the current block and opens a new one. This array is MIXED:
-     each item is either a plain step, or an assertion block
-     (`{ id, assertions: [...] }`). isBlock() tells them apart.
-   - `block.assertions`: an assertion block's own list, added to only via
-     that block's own local "+ Add assertion" button — never a plain step,
-     never a nested test, and never targeted by the global "+ Next step".
-     Its action dropdown is restricted to ASSERTION_ACTIONS.
+   Vocabulary:
+   - A "step" is one leaf row: one action (which may itself be an assertion
+     like assertVisible — an assertion is just a step whose action happens
+     to assert something).
+   - A "block" groups several steps under one heading. There are two kinds,
+     mutually exclusive by the actions they accept:
+       - step block:      { id, steps: [...] }      — STEP_ACTIONS only
+       - assertion block:  { id, assertions: [...] } — ASSERTION_ACTIONS only
+     isStepBlock()/isAssertionBlock() tell a block's kind apart by which
+     array key it carries. Blocks don't nest — a block's own list is always
+     flat steps, never another block.
+   - A "test" is the one named, top-level container (`scenario.tests[n]`).
+
+   Both `scenario.sharedSteps` and every `test.steps` are MIXED arrays: each
+   item is either a plain step or a block. They're structurally identical —
+   the only thing special about a test is that it's named and lives in
+   `scenario.tests` rather than being the implicit top-level list.
+
+   The "active container" (what "+ Next step" / "+ Step block" /
+   "+ Assertion block" / Enter-to-add-row all target) is sharedSteps until
+   the first "+ New Test" click, then always the most recently created test.
+   A block is never the active container — it only grows through its own
+   local "+ Add" button, regardless of which test is currently active.
 
    Each step/test/block also has a live DOM row/block tracked in `rowsById`
    / `testsById` / `blocksById` so fields can be updated in place without
@@ -123,20 +137,31 @@ function nextBlockId() {
   return `block-${blockIdCounter}`;
 }
 
-// An item in a test's mixed `steps` array is an assertion block if it has
-// an `assertions` array; otherwise it's a plain step (has `action` etc).
-function isBlock(item) {
+function isStepBlock(item) {
+  return Array.isArray(item.steps);
+}
+
+function isAssertionBlock(item) {
   return Array.isArray(item.assertions);
+}
+
+function isAnyBlock(item) {
+  return isStepBlock(item) || isAssertionBlock(item);
+}
+
+// A block's own list of items, regardless of which kind it is.
+function blockItems(block) {
+  return isStepBlock(block) ? block.steps : block.assertions;
+}
+
+function blockActionsList(block) {
+  return isStepBlock(block) ? STEP_ACTIONS : ASSERTION_ACTIONS;
 }
 
 const rowsById = new Map(); // step id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
 const testsById = new Map(); // test id -> { el, nameInput, listEl }
 const blocksById = new Map(); // block id -> { el, listEl, numberEl }
 
-// The container ("+ Next step" target) is always the most recently created
-// test's steps, or sharedSteps if no test block exists yet. Assertion
-// blocks are never the active container — they're only reachable through
-// their own local "+ Add assertion" button.
 function getActiveContainer() {
   if (scenario.tests.length > 0) {
     return scenario.tests[scenario.tests.length - 1].steps;
@@ -152,41 +177,36 @@ function getActiveListEl() {
   return sharedStepsListEl;
 }
 
-// Locate which array a plain step belongs to (sharedSteps, a test's
-// top-level steps, or an assertion block's assertions), along with its
-// index, the DOM list it renders into, and how to renumber that container
-// after a change. Blocks themselves are located via findBlockContainer.
-function findStepContainer(stepId) {
-  let index = scenario.sharedSteps.findIndex((s) => s.id === stepId);
-  if (index !== -1) {
-    return {
-      array: scenario.sharedSteps,
-      index,
-      listEl: sharedStepsListEl,
-      renumber: () => renumberSteps(scenario.sharedSteps),
-    };
-  }
-
+// Every mixed container (sharedSteps, or one test's steps) paired with its
+// DOM list element — used to search across all of them uniformly.
+function allMixedContainers() {
+  const containers = [{ array: scenario.sharedSteps, listEl: sharedStepsListEl }];
   for (const test of scenario.tests) {
-    index = test.steps.findIndex((item) => !isBlock(item) && item.id === stepId);
+    containers.push({ array: test.steps, listEl: testsById.get(test.id).listEl });
+  }
+  return containers;
+}
+
+// Locate which array a plain step belongs to (a mixed container's top
+// level, or a block's own items), along with its index, the DOM list it
+// renders into, and how to renumber that container after a change.
+function findStepContainer(stepId) {
+  for (const { array, listEl } of allMixedContainers()) {
+    const index = array.findIndex((item) => !isAnyBlock(item) && item.id === stepId);
     if (index !== -1) {
-      return {
-        array: test.steps,
-        index,
-        listEl: testsById.get(test.id).listEl,
-        renumber: () => renumberTestSteps(test),
-      };
+      return { array, index, listEl, renumber: () => renumberItems(array) };
     }
 
-    for (const item of test.steps) {
-      if (!isBlock(item)) continue;
-      const assertionIndex = item.assertions.findIndex((s) => s.id === stepId);
-      if (assertionIndex !== -1) {
+    for (const item of array) {
+      if (!isAnyBlock(item)) continue;
+      const items = blockItems(item);
+      const itemIndex = items.findIndex((s) => s.id === stepId);
+      if (itemIndex !== -1) {
         return {
-          array: item.assertions,
-          index: assertionIndex,
+          array: items,
+          index: itemIndex,
           listEl: blocksById.get(item.id).listEl,
-          renumber: () => renumberSteps(item.assertions),
+          renumber: () => renumberSteps(items),
         };
       }
     }
@@ -195,18 +215,13 @@ function findStepContainer(stepId) {
   return null;
 }
 
-// Locate which test a given assertion block belongs to, along with its
-// index in that test's mixed steps array and how to renumber it.
+// Locate which mixed container a given block belongs to (blocks only ever
+// live at a container's top level — they don't nest).
 function findBlockContainer(blockId) {
-  for (const test of scenario.tests) {
-    const index = test.steps.findIndex((item) => isBlock(item) && item.id === blockId);
+  for (const { array, listEl } of allMixedContainers()) {
+    const index = array.findIndex((item) => isAnyBlock(item) && item.id === blockId);
     if (index !== -1) {
-      return {
-        array: test.steps,
-        index,
-        listEl: testsById.get(test.id).listEl,
-        renumber: () => renumberTestSteps(test),
-      };
+      return { array, index, listEl, renumber: () => renumberItems(array) };
     }
   }
   return null;
@@ -221,9 +236,12 @@ const scenarioDescriptionInput = document.getElementById('scenario-description')
 const sharedStepsListEl = document.getElementById('shared-steps-list');
 const testsContainerEl = document.getElementById('tests-container');
 const addStepBtn = document.getElementById('add-step-btn');
+const addStepBlockBtn = document.getElementById('add-step-block-btn');
+const addAssertionBlockBtn = document.getElementById('add-assertion-block-btn');
 const addTestBtn = document.getElementById('add-test-btn');
 const rowTemplate = document.getElementById('step-row-template');
 const testBlockTemplate = document.getElementById('test-block-template');
+const stepBlockTemplate = document.getElementById('step-block-template');
 const assertionBlockTemplate = document.getElementById('assertion-block-template');
 const jsonPreviewEl = document.getElementById('json-preview');
 const downloadJsonBtn = document.getElementById('download-json-btn');
@@ -259,13 +277,13 @@ function applyFieldVisibility(refs, action) {
 // Does not touch scenario state or append to a container — caller does that.
 //
 // `context` describes what container this row lives in, since that varies
-// (sharedSteps, a test's mixed steps, or a block's assertions-only list):
-//   - actionsList: which actions the row's dropdown offers (ACTIONS, or
-//     ASSERTION_ACTIONS inside a block)
+// (sharedSteps, a test's mixed steps, or a block's own items):
+//   - actionsList: which actions the row's dropdown offers (ACTIONS,
+//     STEP_ACTIONS, or ASSERTION_ACTIONS)
 //   - isLastRow(): whether this row is currently the last one in its
 //     container, checked live since containers change as rows are added
 //   - onEnterAdd(): what Enter-in-the-last-row should do (add a step to
-//     the active container, or add an assertion to this specific block)
+//     the active container, or add an item to this specific block)
 function createRowElement(step, context) {
   const fragment = rowTemplate.content.cloneNode(true);
   const rowEl = fragment.querySelector('.step-row');
@@ -334,7 +352,7 @@ function createRowElement(step, context) {
   // Enter key in any field of the LAST row adds a new row (per spec).
   // What "last row" and "add" mean depend on context: for a top-level row
   // it's the last row of the currently active container; for a row inside
-  // an assertion block it's always that block's own last assertion.
+  // a block it's always that block's own last item.
   for (const field of [targetInput, valueInput, actionSelect, selectionSelect]) {
     field.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -354,10 +372,10 @@ function createRowElement(step, context) {
 }
 
 // Re-labels the "N." prefix on every row in one flat, steps-only container
-// (sharedSteps or a single assertion block's assertions) to match its
-// current order, and enables/disables that container's move-up / move-down
-// buttons at its own ends. Numbering restarts at 1 in each container, since
-// each one reads as its own list.
+// (a single block's own items) to match its current order, and
+// enables/disables that container's move-up / move-down buttons at its own
+// ends. Numbering restarts at 1 in each container, since each one reads as
+// its own list.
 function renumberSteps(stepsArray) {
   stepsArray.forEach((step, index) => {
     const refs = rowsById.get(step.id);
@@ -368,16 +386,16 @@ function renumberSteps(stepsArray) {
   });
 }
 
-// Same idea, but for a test's mixed steps array (plain steps interleaved
-// with assertion blocks) — numbers both kinds of item in one sequence.
-function renumberTestSteps(test) {
-  test.steps.forEach((item, index) => {
-    const refs = isBlock(item) ? blocksById.get(item.id) : rowsById.get(item.id);
+// Same idea, but for a mixed container (sharedSteps or one test's steps) —
+// numbers plain steps and blocks together in one sequence.
+function renumberItems(itemsArray) {
+  itemsArray.forEach((item, index) => {
+    const refs = isAnyBlock(item) ? blocksById.get(item.id) : rowsById.get(item.id);
     if (!refs) return;
-    const numberEl = isBlock(item) ? refs.numberEl : refs.stepNumberEl;
+    const numberEl = isAnyBlock(item) ? refs.numberEl : refs.stepNumberEl;
     numberEl.textContent = `${index + 1}.`;
     refs.el.querySelector('.btn-move-up').disabled = index === 0;
-    refs.el.querySelector('.btn-move-down').disabled = index === test.steps.length - 1;
+    refs.el.querySelector('.btn-move-down').disabled = index === itemsArray.length - 1;
   });
 }
 
@@ -392,7 +410,7 @@ function updateJsonPreview() {
    ========================================================================== */
 
 // Adds a step to the currently active container (see getActiveContainer):
-// sharedSteps until a test block exists, then the most recently opened test.
+// sharedSteps until a test exists, then the most recently created test.
 function addStep({ focus = false } = {}) {
   const initialAction = ACTIONS[0];
   const config = getFieldConfig(initialAction);
@@ -418,12 +436,7 @@ function addStep({ focus = false } = {}) {
   });
   activeListEl.appendChild(rowEl);
 
-  if (scenario.tests.length > 0) {
-    renumberTestSteps(scenario.tests[scenario.tests.length - 1]);
-  } else {
-    renumberSteps(scenario.sharedSteps);
-  }
-
+  renumberItems(activeArray);
   updateJsonPreview();
 
   if (focus) {
@@ -476,11 +489,11 @@ function moveStep(stepId, direction) {
 }
 
 /* ==========================================================================
-   TEST BLOCK OPERATIONS
-   A test block is a named envelope that owns its own steps array + DOM
+   TEST OPERATIONS
+   A test is a named envelope that owns its own mixed steps array + DOM
    list. Creating one changes what getActiveContainer() returns, so all
-   subsequent "+ Next step" / Enter-to-add-row calls target it instead of
-   sharedSteps.
+   subsequent "+ Next step" / "+ Step block" / "+ Assertion block" /
+   Enter-to-add-row calls target it instead of sharedSteps.
    ========================================================================== */
 
 function createTestBlockElement(test) {
@@ -491,7 +504,6 @@ function createTestBlockElement(test) {
   const nameInput = blockEl.querySelector('.test-name-input');
   const removeBtn = blockEl.querySelector('.btn-remove-test');
   const listEl = blockEl.querySelector('.test-steps-list');
-  const addAssertionBlockBtn = blockEl.querySelector('.btn-add-assertion-block');
 
   nameInput.value = test.name;
   nameInput.addEventListener('input', () => {
@@ -500,7 +512,6 @@ function createTestBlockElement(test) {
   });
 
   removeBtn.addEventListener('click', () => removeTest(test.id));
-  addAssertionBlockBtn.addEventListener('click', () => addAssertionBlock(test));
 
   testsById.set(test.id, { el: blockEl, nameInput, listEl });
   return blockEl;
@@ -526,21 +537,28 @@ function addTest({ focus = false } = {}) {
   return test;
 }
 
-function removeTest(testId) {
-  const index = scenario.tests.findIndex((t) => t.id === testId);
-  if (index === -1) return;
-
-  const [test] = scenario.tests.splice(index, 1);
-  for (const item of test.steps) {
-    if (isBlock(item)) {
-      for (const assertion of item.assertions) {
-        rowsById.delete(assertion.id);
+// Removes every rowsById/blocksById entry for one mixed container's items,
+// recursing one level into any block's own items. Used when a test (or, in
+// clearAll, everything) is torn down.
+function cleanupMixedItems(itemsArray) {
+  for (const item of itemsArray) {
+    if (isAnyBlock(item)) {
+      for (const nested of blockItems(item)) {
+        rowsById.delete(nested.id);
       }
       blocksById.delete(item.id);
     } else {
       rowsById.delete(item.id);
     }
   }
+}
+
+function removeTest(testId) {
+  const index = scenario.tests.findIndex((t) => t.id === testId);
+  if (index === -1) return;
+
+  const [test] = scenario.tests.splice(index, 1);
+  cleanupMixedItems(test.steps);
 
   const refs = testsById.get(testId);
   if (refs) {
@@ -552,27 +570,29 @@ function removeTest(testId) {
 }
 
 /* ==========================================================================
-   ASSERTION BLOCK OPERATIONS
-   An assertion block is a leaf envelope living inside a test's mixed steps
-   array. It's never the "active container" for the global "+ Next step" —
-   it only grows through its own local "+ Add assertion" button, and it can
-   only ever hold assertions (ASSERTION_ACTIONS), never a plain step or a
-   nested test.
+   BLOCK OPERATIONS
+   A block (step block or assertion block) is a leaf envelope living at the
+   top level of a mixed container (sharedSteps or a test's steps) — never
+   nested inside another block. It's never the "active container" for the
+   global add buttons; it only grows through its own local "+ Add" button,
+   and a step block can only ever hold STEP_ACTIONS while an assertion
+   block can only ever hold ASSERTION_ACTIONS.
    ========================================================================== */
 
 function createBlockElement(block) {
-  const fragment = assertionBlockTemplate.content.cloneNode(true);
-  const blockEl = fragment.querySelector('.assertion-block');
+  const template = isStepBlock(block) ? stepBlockTemplate : assertionBlockTemplate;
+  const fragment = template.content.cloneNode(true);
+  const blockEl = fragment.querySelector('.block');
   blockEl.dataset.blockId = block.id;
 
-  const numberEl = blockEl.querySelector('.assertion-block-number');
-  const listEl = blockEl.querySelector('.assertion-block-steps-list');
-  const addAssertionBtn = blockEl.querySelector('.btn-add-assertion');
+  const numberEl = blockEl.querySelector('.block-number');
+  const listEl = blockEl.querySelector('.block-steps-list');
+  const addItemBtn = blockEl.querySelector('.btn-add-item');
   const moveUpBtn = blockEl.querySelector('.btn-move-up');
   const moveDownBtn = blockEl.querySelector('.btn-move-down');
   const removeBtn = blockEl.querySelector('.btn-remove-block');
 
-  addAssertionBtn.addEventListener('click', () => addAssertionToBlock(block, { focus: true }));
+  addItemBtn.addEventListener('click', () => addItemToBlock(block, { focus: true }));
   moveUpBtn.addEventListener('click', () => moveBlock(block.id, -1));
   moveDownBtn.addEventListener('click', () => moveBlock(block.id, 1));
   removeBtn.addEventListener('click', () => removeBlock(block.id));
@@ -581,18 +601,28 @@ function createBlockElement(block) {
   return blockEl;
 }
 
-// Appends a new, empty assertion block to the end of one test's steps.
-function addAssertionBlock(test) {
-  const block = { id: nextBlockId(), assertions: [] };
-  test.steps.push(block);
+// Appends a new, empty block to the currently active container (same
+// active-container rule as "+ Next step" / "+ New Test").
+function insertBlockIntoActiveContainer(block) {
+  const activeArray = getActiveContainer();
+  const activeListEl = getActiveListEl();
+  activeArray.push(block);
 
   const blockEl = createBlockElement(block);
-  testsById.get(test.id).listEl.appendChild(blockEl);
+  activeListEl.appendChild(blockEl);
 
-  renumberTestSteps(test);
+  renumberItems(activeArray);
   updateJsonPreview();
 
   return block;
+}
+
+function addStepBlock() {
+  return insertBlockIntoActiveContainer({ id: nextBlockId(), steps: [] });
+}
+
+function addAssertionBlock() {
+  return insertBlockIntoActiveContainer({ id: nextBlockId(), assertions: [] });
 }
 
 function removeBlock(blockId) {
@@ -601,8 +631,8 @@ function removeBlock(blockId) {
   const { array, index } = container;
 
   const [block] = array.splice(index, 1);
-  for (const assertion of block.assertions) {
-    rowsById.delete(assertion.id);
+  for (const item of blockItems(block)) {
+    rowsById.delete(item.id);
   }
 
   const refs = blocksById.get(blockId);
@@ -638,10 +668,13 @@ function moveBlock(blockId, direction) {
   updateJsonPreview();
 }
 
-// Adds an assertion row to one specific block. Always targets that block,
-// regardless of which test is "active" — blocks manage their own append.
-function addAssertionToBlock(block, { focus = false } = {}) {
-  const initialAction = ASSERTION_ACTIONS[0];
+// Adds an item (a step or an assertion, depending on the block's kind) to
+// one specific block. Always targets that block, regardless of which test
+// is "active" — blocks manage their own append.
+function addItemToBlock(block, { focus = false } = {}) {
+  const actionsList = blockActionsList(block);
+  const items = blockItems(block);
+  const initialAction = actionsList[0];
   const config = getFieldConfig(initialAction);
   const step = {
     id: nextStepId(),
@@ -650,16 +683,16 @@ function addAssertionToBlock(block, { focus = false } = {}) {
     selection: config.selection ? 'single' : null,
     value: '',
   };
-  block.assertions.push(step);
+  items.push(step);
 
   const rowEl = createRowElement(step, {
-    actionsList: ASSERTION_ACTIONS,
-    isLastRow: () => block.assertions[block.assertions.length - 1] === step,
-    onEnterAdd: () => addAssertionToBlock(block, { focus: true }),
+    actionsList,
+    isLastRow: () => items[items.length - 1] === step,
+    onEnterAdd: () => addItemToBlock(block, { focus: true }),
   });
   blocksById.get(block.id).listEl.appendChild(rowEl);
 
-  renumberSteps(block.assertions);
+  renumberSteps(items);
   updateJsonPreview();
 
   if (focus) {
@@ -673,8 +706,8 @@ function addAssertionToBlock(block, { focus = false } = {}) {
    RESET
    ========================================================================== */
 
-// Wipes scenario name/description, shared steps, and all test blocks back
-// to the same state the app starts in (one empty step, no tests, no name).
+// Wipes scenario name/description, shared steps, and all tests back to the
+// same state the app starts in (one empty step, no tests, no name).
 function clearAll() {
   scenario.scenarioName = '';
   scenarioNameInput.value = '';
@@ -710,11 +743,15 @@ function exportStep(s) {
   };
 }
 
-// Exports one item from a test's mixed steps array: a plain step as-is, or
-// an assertion block as { id, assertions: [...] } — the presence of
-// `assertions` is what marks it as a block on the way out too.
-function exportTestStepsItem(item) {
-  if (isBlock(item)) {
+// Exports one item from a mixed container: a plain step as-is, a step
+// block as { id, steps: [...] }, or an assertion block as
+// { id, assertions: [...] } — the array key is what marks a block's kind
+// on the way out too.
+function exportItem(item) {
+  if (isStepBlock(item)) {
+    return { id: item.id, steps: item.steps.map(exportStep) };
+  }
+  if (isAssertionBlock(item)) {
     return { id: item.id, assertions: item.assertions.map(exportStep) };
   }
   return exportStep(item);
@@ -727,16 +764,16 @@ function buildExportObject() {
   };
 
   // sharedSteps/tests only make sense once there's an actual branch to
-  // represent (2+ test blocks). With 0 or 1 test blocks there's nothing to
-  // share between, so export a single flat `steps` list instead.
+  // represent (2+ tests). With 0 or 1 tests there's nothing to share
+  // between, so export a single flat `steps` list instead.
   if (scenario.tests.length > 1) {
     return {
       ...base,
-      sharedSteps: scenario.sharedSteps.map(exportStep),
+      sharedSteps: scenario.sharedSteps.map(exportItem),
       tests: scenario.tests.map((t) => ({
         id: t.id,
         name: t.name,
-        steps: t.steps.map(exportTestStepsItem),
+        steps: t.steps.map(exportItem),
       })),
     };
   }
@@ -747,7 +784,7 @@ function buildExportObject() {
 
   return {
     ...base,
-    steps: flatSteps.map(exportTestStepsItem),
+    steps: flatSteps.map(exportItem),
   };
 }
 
@@ -805,6 +842,8 @@ scenarioDescriptionInput.addEventListener('input', () => {
 });
 
 addStepBtn.addEventListener('click', () => addStep({ focus: true }));
+addStepBlockBtn.addEventListener('click', () => addStepBlock());
+addAssertionBlockBtn.addEventListener('click', () => addAssertionBlock());
 addTestBtn.addEventListener('click', () => addTest({ focus: true }));
 
 downloadJsonBtn.addEventListener('click', downloadJson);

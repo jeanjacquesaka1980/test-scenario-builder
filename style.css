@@ -250,15 +250,36 @@ label {
 
 .list-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 4px;
 }
 
 .btn-add,
+.btn-add-step-block,
+.btn-add-assertion-block,
 .btn-add-test {
-  flex: 1 1 0;
+  flex: 1 1 160px;
   border-style: dashed;
   color: #444;
+}
+
+.btn-add-step-block {
+  color: #0f766e;
+  border-color: #7fd4c9;
+}
+
+.btn-add-step-block:hover {
+  background: #e6fbf7;
+}
+
+.btn-add-assertion-block {
+  color: #92400e;
+  border-color: #f2c88a;
+}
+
+.btn-add-assertion-block:hover {
+  background: #fef3e2;
 }
 
 .btn-add-test {
@@ -325,81 +346,108 @@ label {
   background: #fff;
 }
 
-.btn-add-assertion-block {
-  width: 100%;
-  margin-top: 10px;
-  border-style: dashed;
-  color: #92400e;
-  border-color: #f2c88a;
-}
-
-.btn-add-assertion-block:hover {
-  background: #fef3e2;
-}
-
 /* ==========================================================================
-   Assertion blocks
-   A leaf envelope one level deeper than a test block: it can only hold
-   assertions, so it gets its own local "+ Add assertion" control instead
-   of participating in the global "+ Next step" / active-container flow.
+   Blocks (step blocks + assertion blocks)
+   Both are leaf envelopes that can sit at the top level of sharedSteps or
+   inside a test, alongside plain steps. They share one structure —
+   .block-header / .block-badge / .block-number / .block-controls /
+   .block-steps-list / .btn-add-item — themed by the .step-block or
+   .assertion-block modifier class, and built by one JS function
+   (createBlockElement). Neither participates in the global "+ Next step"
+   active-container flow: each grows only through its own "+ Add" button.
    ========================================================================== */
 
-.assertion-block {
-  border: 1px solid #f2c88a;
+.block {
   border-radius: 6px;
-  background: #fffaf0;
   padding: 10px 12px;
   margin-top: 10px;
 }
 
-.assertion-block-header {
+.step-block {
+  border: 1px solid #7fd4c9;
+  background: #f2fbf9;
+}
+
+.assertion-block {
+  border: 1px solid #f2c88a;
+  background: #fffaf0;
+}
+
+.block-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
 }
 
-.assertion-block-badge {
+.block-badge {
   flex: 0 0 auto;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #92400e;
-  background: #fde9c8;
   border-radius: 4px;
   padding: 3px 7px;
 }
 
-.assertion-block-number {
+.step-block .block-badge {
+  color: #0f766e;
+  background: #d3f5ef;
+}
+
+.assertion-block .block-badge {
+  color: #92400e;
+  background: #fde9c8;
+}
+
+.block-number {
   flex: 0 0 auto;
   font-weight: 600;
-  color: #92400e;
   font-variant-numeric: tabular-nums;
 }
 
-.assertion-block-controls {
+.step-block .block-number {
+  color: #0f766e;
+}
+
+.assertion-block .block-number {
+  color: #92400e;
+}
+
+.block-controls {
   margin-left: auto;
   display: flex;
   gap: 4px;
 }
 
-.assertion-block .steps-list:not(:empty) {
+.block .steps-list:not(:empty) {
   margin-bottom: 10px;
 }
 
-.assertion-block .step-row {
+.block .step-row {
   background: #fff;
 }
 
-.btn-add-assertion {
+.btn-add-item {
   width: 100%;
   border-style: dashed;
+}
+
+.step-block .btn-add-item {
+  color: #0f766e;
+  border-color: #7fd4c9;
+}
+
+.step-block .btn-add-item:hover {
+  background: #e6fbf7;
+}
+
+.assertion-block .btn-add-item {
   color: #92400e;
   border-color: #f2c88a;
 }
 
-.btn-add-assertion:hover {
+.assertion-block .btn-add-item:hover {
   background: #fef3e2;
 }
 

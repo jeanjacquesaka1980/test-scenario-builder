@@ -24,14 +24,16 @@
       <textarea id="scenario-description" rows="2" placeholder="What this scenario covers"></textarea>
     </section>
 
-    <!-- Step rows get rendered into here. Steps added before the first
-         "+ New Test" click land in the shared list; after that, each
-         "+ Next step" click adds to whichever test block is currently open. -->
+    <!-- Step rows get rendered into here. Steps/blocks added before the
+         first "+ New Test" click land in the shared list; after that, each
+         control below targets whichever test is currently open. -->
     <section class="steps-section">
       <div id="shared-steps-list" class="steps-list"></div>
       <div id="tests-container"></div>
       <div class="list-controls">
         <button type="button" id="add-step-btn" class="btn btn-add">+ Next step</button>
+        <button type="button" id="add-step-block-btn" class="btn btn-add-step-block">+ Step block</button>
+        <button type="button" id="add-assertion-block-btn" class="btn btn-add-assertion-block">+ Assertion block</button>
         <button type="button" id="add-test-btn" class="btn btn-add-test">+ New Test</button>
       </div>
     </section>
@@ -85,8 +87,8 @@
     </div>
   </template>
 
-  <!-- Test block template: a labeled envelope that owns its own steps list.
-       Cloned by JS each time "+ New Test" is clicked. -->
+  <!-- Test block template: a labeled envelope that owns its own mixed steps
+       list. Cloned by JS each time "+ New Test" is clicked. -->
   <template id="test-block-template">
     <div class="test-block" data-test-id="">
       <div class="test-block-header">
@@ -95,31 +97,49 @@
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
       <div class="test-steps-list steps-list"></div>
-      <button type="button" class="btn btn-add-assertion-block">+ Assertion block</button>
     </div>
   </template>
 
-  <!-- Assertion block template: a leaf envelope inside a test that can only
-       hold assertions (no plain step, no nested test). Cloned by JS each
-       time a test's "+ Assertion block" button is clicked. -->
+  <!-- Step block template: a leaf envelope that can only hold plain
+       interaction steps (no assertions, no nested test). Same structure as
+       the assertion block template below — themed differently via the
+       .step-block modifier class — so both are built by one JS function. -->
+  <template id="step-block-template">
+    <div class="block step-block" data-block-id="">
+      <div class="block-header">
+        <span class="block-badge">Steps</span>
+        <span class="block-number"></span>
+        <div class="block-controls">
+          <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
+          <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
+          <button type="button" class="btn btn-icon btn-remove-block" title="Remove step block">&times;</button>
+        </div>
+      </div>
+      <div class="block-steps-list steps-list"></div>
+      <button type="button" class="btn btn-add-item">+ Add step</button>
+    </div>
+  </template>
+
+  <!-- Assertion block template: a leaf envelope that can only hold
+       assertions (no plain step, no nested test). -->
   <template id="assertion-block-template">
-    <div class="assertion-block" data-block-id="">
-      <div class="assertion-block-header">
-        <span class="assertion-block-badge">Assertions</span>
-        <span class="assertion-block-number"></span>
-        <div class="assertion-block-controls">
+    <div class="block assertion-block" data-block-id="">
+      <div class="block-header">
+        <span class="block-badge">Assertions</span>
+        <span class="block-number"></span>
+        <div class="block-controls">
           <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
           <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
           <button type="button" class="btn btn-icon btn-remove-block" title="Remove assertion block">&times;</button>
         </div>
       </div>
-      <div class="assertion-block-steps-list steps-list"></div>
-      <button type="button" class="btn btn-add-assertion">+ Add assertion</button>
+      <div class="block-steps-list steps-list"></div>
+      <button type="button" class="btn btn-add-item">+ Add assertion</button>
     </div>
   </template>
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=3"></script>
+  <script src="script.js?v=4"></script>
 </body>
 </html>
