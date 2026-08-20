@@ -86,12 +86,16 @@ function getFieldConfig(action) {
    - A "step" is one leaf row: one action (which may itself be an assertion
      like assertVisible — an assertion is just a step whose action happens
      to assert something).
-   - A "block" groups several steps under one heading. There are two kinds,
-     mutually exclusive by the actions they accept:
-       - step block:      { id, steps: [...] }      — STEP_ACTIONS only
-       - assertion block:  { id, assertions: [...] } — ASSERTION_ACTIONS only
-     isStepBlock()/isAssertionBlock() tell a block's kind apart by which
-     array key it carries. Blocks don't nest — a block's own list is always
+   - A "block" groups several steps under one heading — in export terms,
+     one block is one test.step() call wrapping several actions, same as a
+     standalone step is one test.step() call wrapping a single action.
+     Shape: { id, kind: 'step' | 'assertion', actions: [...] }. `kind` is
+     what the BUILDER uses to restrict which actions the block accepts
+     (STEP_ACTIONS for 'step', ASSERTION_ACTIONS for 'assertion') and which
+     template/theme to render — it's a builder-only concern, dropped on
+     export, since each action already self-describes via its own `action`
+     field (an agent reading the export doesn't need the block's kind, only
+     what's inside it). Blocks don't nest — a block's own list is always
      flat steps, never another block.
    - A "test" is the one named, top-level container (`scenario.tests[n]`).
 
@@ -137,25 +141,16 @@ function nextBlockId() {
   return `block-${blockIdCounter}`;
 }
 
-function isStepBlock(item) {
-  return Array.isArray(item.steps);
-}
-
-function isAssertionBlock(item) {
-  return Array.isArray(item.assertions);
-}
-
 function isAnyBlock(item) {
-  return isStepBlock(item) || isAssertionBlock(item);
+  return Array.isArray(item.actions);
 }
 
-// A block's own list of items, regardless of which kind it is.
-function blockItems(block) {
-  return isStepBlock(block) ? block.steps : block.assertions;
+function isStepBlock(item) {
+  return isAnyBlock(item) && item.kind === 'step';
 }
 
 function blockActionsList(block) {
-  return isStepBlock(block) ? STEP_ACTIONS : ASSERTION_ACTIONS;
+  return block.kind === 'assertion' ? ASSERTION_ACTIONS : STEP_ACTIONS;
 }
 
 const rowsById = new Map(); // step id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
@@ -199,7 +194,7 @@ function findStepContainer(stepId) {
 
     for (const item of array) {
       if (!isAnyBlock(item)) continue;
-      const items = blockItems(item);
+      const items = item.actions;
       const itemIndex = items.findIndex((s) => s.id === stepId);
       if (itemIndex !== -1) {
         return {
@@ -543,7 +538,7 @@ function addTest({ focus = false } = {}) {
 function cleanupMixedItems(itemsArray) {
   for (const item of itemsArray) {
     if (isAnyBlock(item)) {
-      for (const nested of blockItems(item)) {
+      for (const nested of item.actions) {
         rowsById.delete(nested.id);
       }
       blocksById.delete(item.id);
@@ -618,11 +613,11 @@ function insertBlockIntoActiveContainer(block) {
 }
 
 function addStepBlock() {
-  return insertBlockIntoActiveContainer({ id: nextBlockId(), steps: [] });
+  return insertBlockIntoActiveContainer({ id: nextBlockId(), kind: 'step', actions: [] });
 }
 
 function addAssertionBlock() {
-  return insertBlockIntoActiveContainer({ id: nextBlockId(), assertions: [] });
+  return insertBlockIntoActiveContainer({ id: nextBlockId(), kind: 'assertion', actions: [] });
 }
 
 function removeBlock(blockId) {
@@ -631,7 +626,7 @@ function removeBlock(blockId) {
   const { array, index } = container;
 
   const [block] = array.splice(index, 1);
-  for (const item of blockItems(block)) {
+  for (const item of block.actions) {
     rowsById.delete(item.id);
   }
 
@@ -673,7 +668,7 @@ function moveBlock(blockId, direction) {
 // is "active" — blocks manage their own append.
 function addItemToBlock(block, { focus = false } = {}) {
   const actionsList = blockActionsList(block);
-  const items = blockItems(block);
+  const items = block.actions;
   const initialAction = actionsList[0];
   const config = getFieldConfig(initialAction);
   const step = {
@@ -743,16 +738,16 @@ function exportStep(s) {
   };
 }
 
-// Exports one item from a mixed container: a plain step as-is, a step
-// block as { id, steps: [...] }, or an assertion block as
-// { id, assertions: [...] } — the array key is what marks a block's kind
-// on the way out too.
+// Exports one item from a mixed container: a standalone step exports bare
+// (same shape as exportStep — one test.step() call wrapping one action),
+// while ANY block — step block or assertion block alike — exports as
+// { id, actions: [...] } (one test.step() call wrapping several actions).
+// The block's kind (which restricts what the builder let you put in it)
+// is deliberately dropped here: it's a builder-only concern, and each
+// action already says what it is via its own `action` field.
 function exportItem(item) {
-  if (isStepBlock(item)) {
-    return { id: item.id, steps: item.steps.map(exportStep) };
-  }
-  if (isAssertionBlock(item)) {
-    return { id: item.id, assertions: item.assertions.map(exportStep) };
+  if (isAnyBlock(item)) {
+    return { id: item.id, actions: item.actions.map(exportStep) };
   }
   return exportStep(item);
 }
