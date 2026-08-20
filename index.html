@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Scenario Builder</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="app-header">
+    <h1>Test Scenario Builder</h1>
+    <button type="button" id="clear-all-btn" class="btn btn-clear-all">Clear all</button>
+  </header>
+
+  <main class="app-main">
+
+    <!-- Scenario name -->
+    <section class="scenario-name-section">
+      <label for="scenario-name">Scenario name</label>
+      <input type="text" id="scenario-name" placeholder="e.g. Login with valid credentials">
+
+      <label for="scenario-description">Description</label>
+      <textarea id="scenario-description" rows="2" placeholder="What this scenario covers"></textarea>
+    </section>
+
+    <!-- Step rows get rendered into here. Steps added before the first
+         "+ New Test" click land in the shared list; after that, each
+         "+ Next step" click adds to whichever test block is currently open. -->
+    <section class="steps-section">
+      <div id="shared-steps-list" class="steps-list"></div>
+      <div id="tests-container"></div>
+      <div class="list-controls">
+        <button type="button" id="add-step-btn" class="btn btn-add">+ Next step</button>
+        <button type="button" id="add-test-btn" class="btn btn-add-test">+ New Test</button>
+      </div>
+    </section>
+
+    <!-- Export -->
+    <section class="export-section">
+      <h2>Export JSON</h2>
+      <div class="export-buttons">
+        <button type="button" id="download-json-btn" class="btn">Download JSON</button>
+        <button type="button" id="copy-json-btn" class="btn">Copy to clipboard</button>
+        <span id="copy-feedback" class="copy-feedback" aria-live="polite"></span>
+      </div>
+      <pre id="json-preview" class="json-preview"></pre>
+    </section>
+
+  </main>
+
+  <!-- Confirmation dialog for "Clear all". A native <dialog> instead of
+       window.confirm() so it renders reliably in every embedding context. -->
+  <dialog id="clear-confirm-dialog" class="confirm-dialog">
+    <p>Clear the scenario name and all steps and tests? This cannot be undone.</p>
+    <div class="confirm-dialog-buttons">
+      <button type="button" id="clear-cancel-btn" class="btn">Cancel</button>
+      <button type="button" id="clear-confirm-btn" class="btn btn-danger">Clear everything</button>
+    </div>
+  </dialog>
+
+  <!-- Row template, cloned by JS for each step -->
+  <template id="step-row-template">
+    <div class="step-row" data-step-id="">
+      <div class="step-row-main">
+        <span class="step-number"></span>
+
+        <select class="field field-action" data-field="action"></select>
+
+        <input type="text" class="field field-target" data-field="target" placeholder="target (e.g. #submit-button)">
+
+        <select class="field field-selection" data-field="selection">
+          <option value="single">single</option>
+          <option value="multi">multi</option>
+        </select>
+
+        <input type="text" class="field field-value" data-field="value" placeholder="value">
+
+        <div class="step-row-controls">
+          <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
+          <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
+          <button type="button" class="btn btn-icon btn-remove" title="Remove step">&times;</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Test block template: a labeled envelope that owns its own steps list.
+       Cloned by JS each time "+ New Test" is clicked. -->
+  <template id="test-block-template">
+    <div class="test-block" data-test-id="">
+      <div class="test-block-header">
+        <span class="test-block-badge">Test</span>
+        <input type="text" class="test-name-input" data-field="test-name" placeholder="Test name">
+        <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
+      </div>
+      <div class="test-steps-list steps-list"></div>
+    </div>
+  </template>
+
+  <!-- Cache-busting query param: bump this whenever script.js changes, so
+       browsers don't keep serving a stale cached copy during development. -->
+  <script src="script.js?v=2"></script>
+</body>
+</html>

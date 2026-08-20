@@ -1,0 +1,382 @@
+/* ==========================================================================
+   Base / layout
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #f4f5f7;
+  color: #1a1d21;
+  line-height: 1.4;
+}
+
+.app-header {
+  background: #1a1d21;
+  color: #fff;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.btn-clear-all {
+  background: transparent;
+  border-color: #555;
+  color: #e8a5a0;
+}
+
+.btn-clear-all:hover {
+  background: #2a2d31;
+  border-color: #b3261e;
+}
+
+.app-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+section {
+  background: #fff;
+  border: 1px solid #e0e2e6;
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+section h2 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #555;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 6px;
+}
+
+/* ==========================================================================
+   Scenario name
+   ========================================================================== */
+
+.scenario-name-section input {
+  width: 100%;
+  font-size: 15px;
+  padding: 8px 10px;
+}
+
+.scenario-name-section textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid #cfd3d9;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.scenario-name-section label:not(:first-child) {
+  margin-top: 14px;
+}
+
+/* ==========================================================================
+   Step rows
+   ========================================================================== */
+
+.steps-section {
+  padding: 16px;
+}
+
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.step-row {
+  border: 1px solid #e0e2e6;
+  border-radius: 6px;
+  background: #fafbfc;
+  padding: 10px 12px;
+}
+
+.step-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.step-number {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: #666;
+  min-width: 22px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.field {
+  padding: 7px 9px;
+  border: 1px solid #cfd3d9;
+  border-radius: 4px;
+  font-size: 14px;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.field-action {
+  flex: 0 0 160px;
+  font-weight: 500;
+}
+
+.field-target {
+  flex: 1 1 200px;
+  min-width: 120px;
+}
+
+.field-selection {
+  flex: 0 0 100px;
+}
+
+.field-value {
+  flex: 1 1 180px;
+  min-width: 120px;
+}
+
+.field[hidden] {
+  display: none;
+}
+
+.step-row-controls {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+
+.btn {
+  cursor: pointer;
+  border: 1px solid #cfd3d9;
+  background: #fff;
+  color: #1a1d21;
+  border-radius: 4px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.btn:hover {
+  background: #f0f1f3;
+}
+
+.btn:active {
+  background: #e4e6e9;
+}
+
+.btn-icon {
+  padding: 5px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.btn-remove {
+  color: #b3261e;
+  border-color: #e3b3b0;
+}
+
+.btn-remove:hover {
+  background: #fbeceb;
+}
+
+.btn-danger {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #93201a;
+}
+
+/* ==========================================================================
+   Confirm dialog
+   ========================================================================== */
+
+.confirm-dialog {
+  border: 1px solid #d0d3d8;
+  border-radius: 8px;
+  padding: 20px 22px;
+  max-width: 380px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.confirm-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.confirm-dialog p {
+  margin: 0 0 18px 0;
+  font-size: 14px;
+  color: #1a1d21;
+}
+
+.confirm-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.list-controls {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn-add,
+.btn-add-test {
+  flex: 1 1 0;
+  border-style: dashed;
+  color: #444;
+}
+
+.btn-add-test {
+  color: #1a5fb4;
+  border-color: #a9c6ea;
+}
+
+.btn-add-test:hover {
+  background: #eaf1fb;
+}
+
+/* ==========================================================================
+   Test blocks
+   ========================================================================== */
+
+#tests-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#shared-steps-list:not(:empty) {
+  margin-bottom: 12px;
+}
+
+.test-block {
+  border: 1px solid #a9c6ea;
+  border-radius: 6px;
+  background: #f5f9fe;
+  padding: 10px 12px;
+}
+
+.test-block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.test-block-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1a5fb4;
+  background: #dbe9fb;
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+
+.test-name-input {
+  flex: 1 1 auto;
+  padding: 6px 9px;
+  border: 1px solid #a9c6ea;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.test-block .step-row {
+  background: #fff;
+}
+
+/* ==========================================================================
+   Export
+   ========================================================================== */
+
+.export-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.copy-feedback {
+  font-size: 12px;
+  color: #1a7f37;
+}
+
+.json-preview {
+  background: #1a1d21;
+  color: #d7dae0;
+  border-radius: 6px;
+  padding: 14px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 400px;
+}
+
+/* ==========================================================================
+   Narrow-width responsive stacking
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  .step-row-main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .field-action,
+  .field-target,
+  .field-selection,
+  .field-value {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .step-number {
+    text-align: left;
+  }
+
+  .step-row-controls {
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
