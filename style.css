@@ -325,6 +325,93 @@ label {
   background: #fff;
 }
 
+.btn-add-assertion-block {
+  width: 100%;
+  margin-top: 10px;
+  border-style: dashed;
+  color: #92400e;
+  border-color: #f2c88a;
+}
+
+.btn-add-assertion-block:hover {
+  background: #fef3e2;
+}
+
+/* ==========================================================================
+   Assertion blocks
+   A leaf envelope one level deeper than a test block: it can only hold
+   assertions, so it gets its own local "+ Add assertion" control instead
+   of participating in the global "+ Next step" / active-container flow.
+   ========================================================================== */
+
+.assertion-block {
+  border: 1px solid #f2c88a;
+  border-radius: 6px;
+  background: #fffaf0;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.assertion-block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.assertion-block-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #92400e;
+  background: #fde9c8;
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+
+.assertion-block-number {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: #92400e;
+  font-variant-numeric: tabular-nums;
+}
+
+.assertion-block-controls {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.assertion-block .steps-list:not(:empty) {
+  margin-bottom: 10px;
+}
+
+.assertion-block .step-row {
+  background: #fff;
+}
+
+.btn-add-assertion {
+  width: 100%;
+  border-style: dashed;
+  color: #92400e;
+  border-color: #f2c88a;
+}
+
+.btn-add-assertion:hover {
+  background: #fef3e2;
+}
+
+.btn-remove-block {
+  color: #b3261e;
+  border-color: #e3b3b0;
+}
+
+.btn-remove-block:hover {
+  background: #fbeceb;
+}
+
 /* ==========================================================================
    Export
    ========================================================================== */

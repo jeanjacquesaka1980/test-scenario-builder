@@ -95,11 +95,31 @@
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
       <div class="test-steps-list steps-list"></div>
+      <button type="button" class="btn btn-add-assertion-block">+ Assertion block</button>
+    </div>
+  </template>
+
+  <!-- Assertion block template: a leaf envelope inside a test that can only
+       hold assertions (no plain step, no nested test). Cloned by JS each
+       time a test's "+ Assertion block" button is clicked. -->
+  <template id="assertion-block-template">
+    <div class="assertion-block" data-block-id="">
+      <div class="assertion-block-header">
+        <span class="assertion-block-badge">Assertions</span>
+        <span class="assertion-block-number"></span>
+        <div class="assertion-block-controls">
+          <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
+          <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
+          <button type="button" class="btn btn-icon btn-remove-block" title="Remove assertion block">&times;</button>
+        </div>
+      </div>
+      <div class="assertion-block-steps-list steps-list"></div>
+      <button type="button" class="btn btn-add-assertion">+ Add assertion</button>
     </div>
   </template>
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=2"></script>
+  <script src="script.js?v=3"></script>
 </body>
 </html>
