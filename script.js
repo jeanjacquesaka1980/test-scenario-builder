@@ -673,13 +673,16 @@ function exportStep(s) {
   };
 }
 
-// Exports one group as { id, actions: [...] } — one test.step() call
-// wrapping its leaf rows. The group's kind (which restricts what the
-// builder let you put in it) is deliberately dropped here: it's a
-// builder-only concern, and each leaf row already says what it is via its
-// own `action` field.
+// Exports one group as { id, step: [...] } — the group itself IS one
+// test.step() call wrapping its leaf rows, whether it's an Action or an
+// Assertion, so the wrapping key is just "step" either way (not "actions",
+// which would only describe one of the two kinds). The group's kind (which
+// restricts what the builder let you put in it) is deliberately dropped
+// here: it's a builder-only concern, and each leaf row already says what
+// it is via its own `id` prefix and `action` field. Internally the group
+// still stores this list on `item.actions` — only the exported key differs.
 function exportItem(item) {
-  return { id: item.id, actions: item.actions.map(exportStep) };
+  return { id: item.id, step: item.actions.map(exportStep) };
 }
 
 function buildExportObject() {
