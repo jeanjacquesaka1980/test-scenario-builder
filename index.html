@@ -25,16 +25,16 @@
     </section>
 
     <!-- Groups get rendered into here. Every entry is always an Action or
-         Assertion group (never a bare unstyled row) — groups added before
-         the first "+ New Test" click land in the shared list; after that,
-         each control below targets whichever test is currently open. -->
+         Assertion group (never a bare unstyled row). These controls always
+         target the workflow directly — each Test has its own "+ Action" /
+         "+ Assertion" buttons for adding to that specific test. -->
     <section class="steps-section">
       <div id="shared-steps-list" class="steps-list"></div>
       <div id="tests-container"></div>
       <div class="list-controls">
         <button type="button" id="add-action-block-btn" class="btn btn-add-action-block">+ Action</button>
         <button type="button" id="add-assertion-block-btn" class="btn btn-add-assertion-block">+ Assertion</button>
-        <button type="button" id="add-test-btn" class="btn btn-add-test">+ New Test</button>
+        <button type="button" id="add-test-btn" class="btn btn-add-test">+ Test</button>
       </div>
     </section>
 
@@ -87,8 +87,10 @@
     </div>
   </template>
 
-  <!-- Test block template: a labeled envelope that owns its own mixed steps
-       list. Cloned by JS each time "+ New Test" is clicked. -->
+  <!-- Test block template: a labeled envelope that owns its own list of
+       Action/Assertion groups. Cloned by JS each time "+ Test" is clicked.
+       Its own "+ Action" / "+ Assertion" buttons always target this
+       specific test, regardless of any other test on the page. -->
   <template id="test-block-template">
     <div class="test-block" data-test-id="">
       <div class="test-block-header">
@@ -97,6 +99,10 @@
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
       <div class="test-steps-list steps-list"></div>
+      <div class="list-controls">
+        <button type="button" class="btn btn-add-action-block">+ Action</button>
+        <button type="button" class="btn btn-add-assertion-block">+ Assertion</button>
+      </div>
     </div>
   </template>
 
@@ -140,6 +146,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=8"></script>
+  <script src="script.js?v=9"></script>
 </body>
 </html>

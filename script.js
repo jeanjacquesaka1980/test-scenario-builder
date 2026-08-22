@@ -97,11 +97,12 @@ function getFieldConfig(action) {
    two containers that exist are "workflow" (the implicit root — there's
    exactly one of these in the whole document) and a Test.
 
-   The "active container" (what "+ Action" / "+ Assertion" target) is
-   scenario.workflow until the first "+ New Test" click, then always the
-   most recently created test. A group is never the active container — it
-   only grows through its own local "+ Add" button, regardless of which
-   test is currently active.
+   There's no "active container" — every add targets something explicit:
+   the top-level "+ Action" / "+ Assertion" always add to scenario.workflow;
+   each Test has its own "+ Action" / "+ Assertion" that always add to that
+   specific test, regardless of which test was created most recently. A
+   group itself works the same way one level down — it only grows through
+   its own local "+ Add" button.
 
    Each leaf row/test/group also has a live DOM element tracked in
    `rowsById` / `testsById` / `blocksById` so fields can be updated in place
@@ -157,21 +158,6 @@ function blockActionsList(block) {
 const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
 const testsById = new Map(); // test id -> { el, nameInput, listEl }
 const blocksById = new Map(); // group id -> { el, listEl, numberEl }
-
-function getActiveContainer() {
-  if (scenario.tests.length > 0) {
-    return scenario.tests[scenario.tests.length - 1].steps;
-  }
-  return scenario.workflow;
-}
-
-function getActiveListEl() {
-  if (scenario.tests.length > 0) {
-    const lastTest = scenario.tests[scenario.tests.length - 1];
-    return testsById.get(lastTest.id).listEl;
-  }
-  return sharedStepsListEl;
-}
 
 // Every top-level container (scenario.workflow, or one test's steps)
 // paired with its DOM list element — used to search across all uniformly.
@@ -435,8 +421,8 @@ function moveStep(stepId, direction) {
 /* ==========================================================================
    TEST OPERATIONS
    A test is a named envelope that owns its own list of Action/Assertion
-   groups + DOM list. Creating one changes what getActiveContainer()
-   returns, so "+ Action" / "+ Assertion" target it instead of the workflow.
+   groups + DOM list, and its own local "+ Action" / "+ Assertion" buttons
+   that always add to that specific test.
    ========================================================================== */
 
 function createTestBlockElement(test) {
@@ -447,6 +433,8 @@ function createTestBlockElement(test) {
   const nameInput = blockEl.querySelector('.test-name-input');
   const removeBtn = blockEl.querySelector('.btn-remove-test');
   const listEl = blockEl.querySelector('.test-steps-list');
+  const addActionBtn = blockEl.querySelector('.btn-add-action-block');
+  const addAssertionBtn = blockEl.querySelector('.btn-add-assertion-block');
 
   nameInput.value = test.name;
   nameInput.addEventListener('input', () => {
@@ -457,6 +445,10 @@ function createTestBlockElement(test) {
   removeBtn.addEventListener('click', () => removeTest(test.id));
 
   testsById.set(test.id, { el: blockEl, nameInput, listEl });
+
+  addActionBtn.addEventListener('click', () => addGroupTo('action', test.steps, listEl));
+  addAssertionBtn.addEventListener('click', () => addGroupTo('assertion', test.steps, listEl));
+
   return blockEl;
 }
 
@@ -511,10 +503,9 @@ function removeTest(testId) {
 /* ==========================================================================
    GROUP OPERATIONS (Action / Assertion)
    A group is a leaf envelope living at the top level of scenario.workflow
-   or a test's steps — never nested inside another group. It's never the
-   "active container" for the global add buttons; it only grows through its
-   own local "+ Add" button, and an Action can only ever hold
-   REGULAR_ACTIONS while an Assertion can only ever hold ASSERTION_ACTIONS.
+   or a test's steps — never nested inside another group. An Action can
+   only ever hold REGULAR_ACTIONS while an Assertion can only ever hold
+   ASSERTION_ACTIONS.
    ========================================================================== */
 
 function createBlockElement(block) {
@@ -539,28 +530,30 @@ function createBlockElement(block) {
   return blockEl;
 }
 
-// Appends a new, empty group to the currently active container (same
-// active-container rule as "+ New Test").
-function insertBlockIntoActiveContainer(block) {
-  const activeArray = getActiveContainer();
-  const activeListEl = getActiveListEl();
-  activeArray.push(block);
+// Appends a new, empty group of the given kind to an explicit target
+// container (scenario.workflow, or one specific test's steps) and its DOM
+// list. Every "+ Action" / "+ Assertion" button — top-level or a test's own
+// — calls this with its own fixed target, so there's never any ambiguity
+// about which container it's adding to.
+function addGroupTo(kind, targetArray, targetListEl) {
+  const block = { id: nextBlockId(), kind, actions: [] };
+  targetArray.push(block);
 
   const blockEl = createBlockElement(block);
-  activeListEl.appendChild(blockEl);
+  targetListEl.appendChild(blockEl);
 
-  renumberGroups(activeArray);
+  renumberGroups(targetArray);
   updateJsonPreview();
 
   return block;
 }
 
 function addActionBlock() {
-  return insertBlockIntoActiveContainer({ id: nextBlockId(), kind: 'action', actions: [] });
+  return addGroupTo('action', scenario.workflow, sharedStepsListEl);
 }
 
 function addAssertionBlock() {
-  return insertBlockIntoActiveContainer({ id: nextBlockId(), kind: 'assertion', actions: [] });
+  return addGroupTo('assertion', scenario.workflow, sharedStepsListEl);
 }
 
 function removeBlock(blockId) {
