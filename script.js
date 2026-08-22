@@ -87,10 +87,12 @@ function getFieldConfig(action) {
    - An "Assertion" is a group of one or more assertions.
    - A "Test" is the one named, top-level container (`scenario.tests[n]`).
    Every entry the user adds is always one of these three — there's no bare,
-   ungrouped row. Shape: { id, kind: 'action' | 'assertion', actions: [...] }.
-   `kind` restricts which actions the group accepts (REGULAR_ACTIONS for
-   'action', ASSERTION_ACTIONS for 'assertion') and which template/theme to
-   render. Groups don't nest — a group's own list is always flat leaf rows.
+   ungrouped row. Shape: { id, kind: 'action' | 'assertion', name, actions:
+   [...] }. `kind` restricts which actions the group accepts
+   (REGULAR_ACTIONS for 'action', ASSERTION_ACTIONS for 'assertion') and
+   which template/theme to render. `name` is optional, freeform — becomes
+   the group's test.step() title. Groups don't nest — a group's own list is
+   always flat leaf rows.
 
    `scenario.workflow` and every `test.steps` hold ONLY Action/Assertion
    groups — never a Test (a Test can't nest inside a Test either). The only
@@ -515,11 +517,18 @@ function createBlockElement(block) {
   blockEl.dataset.blockId = block.id;
 
   const numberEl = blockEl.querySelector('.block-number');
+  const nameInput = blockEl.querySelector('.block-name-input');
   const listEl = blockEl.querySelector('.block-steps-list');
   const addItemBtn = blockEl.querySelector('.btn-add-item');
   const moveUpBtn = blockEl.querySelector('.btn-move-up');
   const moveDownBtn = blockEl.querySelector('.btn-move-down');
   const removeBtn = blockEl.querySelector('.btn-remove-block');
+
+  nameInput.value = block.name;
+  nameInput.addEventListener('input', () => {
+    block.name = nameInput.value;
+    updateJsonPreview();
+  });
 
   addItemBtn.addEventListener('click', () => addItemToBlock(block, { focus: true }));
   moveUpBtn.addEventListener('click', () => moveBlock(block.id, -1));
@@ -536,7 +545,7 @@ function createBlockElement(block) {
 // — calls this with its own fixed target, so there's never any ambiguity
 // about which container it's adding to.
 function addGroupTo(kind, targetArray, targetListEl) {
-  const block = { id: nextBlockId(), kind, actions: [] };
+  const block = { id: nextBlockId(), kind, name: '', actions: [] };
   targetArray.push(block);
 
   const blockEl = createBlockElement(block);
@@ -682,7 +691,7 @@ function exportStep(s) {
 // it is via its own `id` prefix and `action` field. Internally the group
 // still stores this list on `item.actions` — only the exported key differs.
 function exportItem(item) {
-  return { id: item.id, step: item.actions.map(exportStep) };
+  return { id: item.id, name: item.name, step: item.actions.map(exportStep) };
 }
 
 function buildExportObject() {

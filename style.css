@@ -412,6 +412,24 @@ label {
   color: #92400e;
 }
 
+.block-name-input {
+  flex: 1 1 auto;
+  min-width: 80px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.action-block .block-name-input {
+  border: 1px solid #7fd4c9;
+}
+
+.assertion-block .block-name-input {
+  border: 1px solid #f2c88a;
+}
+
 .block-controls {
   margin-left: auto;
   display: flex;
@@ -511,5 +529,14 @@ label {
   .step-row-controls {
     margin-left: 0;
     justify-content: flex-end;
+  }
+
+  .block-header {
+    flex-wrap: wrap;
+  }
+
+  .block-name-input {
+    flex: 1 1 100%;
+    order: 1;
   }
 }
