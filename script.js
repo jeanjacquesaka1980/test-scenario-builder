@@ -92,33 +92,46 @@ function getFieldConfig(action) {
    'action', ASSERTION_ACTIONS for 'assertion') and which template/theme to
    render. Groups don't nest — a group's own list is always flat leaf rows.
 
-   `scenario.sharedSteps` and every `test.steps` hold ONLY Action/Assertion
+   `scenario.workflow` and every `test.steps` hold ONLY Action/Assertion
    groups — never a Test (a Test can't nest inside a Test either). The only
-   two containers that exist are "shared" (the implicit root) and a Test.
+   two containers that exist are "workflow" (the implicit root — there's
+   exactly one of these in the whole document) and a Test.
 
    The "active container" (what "+ Action" / "+ Assertion" target) is
-   sharedSteps until the first "+ New Test" click, then always the most
-   recently created test. A group is never the active container — it only
-   grows through its own local "+ Add" button, regardless of which test is
-   currently active.
+   scenario.workflow until the first "+ New Test" click, then always the
+   most recently created test. A group is never the active container — it
+   only grows through its own local "+ Add" button, regardless of which
+   test is currently active.
 
    Each leaf row/test/group also has a live DOM element tracked in
    `rowsById` / `testsById` / `blocksById` so fields can be updated in place
    without re-rendering the whole list (which would blow away focus/cursor
    position while typing).
+
+   Leaf row ids are prefixed by which kind of group they live in —
+   `action-N` inside an Action, `assertion-N` inside an Assertion — using
+   one global counter per prefix (not reset per group), so every id in the
+   document stays a stable, unique reference regardless of where its group
+   gets moved later.
    ========================================================================== */
 
 const scenario = {
   scenarioName: '',
   scenarioDescription: '',
-  sharedSteps: [],
+  workflow: [],
   tests: [],
 };
 
-let stepIdCounter = 0;
-function nextStepId() {
-  stepIdCounter += 1;
-  return `step-${stepIdCounter}`;
+let actionIdCounter = 0;
+function nextActionId() {
+  actionIdCounter += 1;
+  return `action-${actionIdCounter}`;
+}
+
+let assertionIdCounter = 0;
+function nextAssertionId() {
+  assertionIdCounter += 1;
+  return `assertion-${assertionIdCounter}`;
 }
 
 let testIdCounter = 0;
@@ -149,7 +162,7 @@ function getActiveContainer() {
   if (scenario.tests.length > 0) {
     return scenario.tests[scenario.tests.length - 1].steps;
   }
-  return scenario.sharedSteps;
+  return scenario.workflow;
 }
 
 function getActiveListEl() {
@@ -160,10 +173,10 @@ function getActiveListEl() {
   return sharedStepsListEl;
 }
 
-// Every top-level container (sharedSteps, or one test's steps) paired with
-// its DOM list element — used to search across all of them uniformly.
+// Every top-level container (scenario.workflow, or one test's steps)
+// paired with its DOM list element — used to search across all uniformly.
 function allTopLevelContainers() {
-  const containers = [{ array: scenario.sharedSteps, listEl: sharedStepsListEl }];
+  const containers = [{ array: scenario.workflow, listEl: sharedStepsListEl }];
   for (const test of scenario.tests) {
     containers.push({ array: test.steps, listEl: testsById.get(test.id).listEl });
   }
@@ -355,8 +368,8 @@ function renumberSteps(stepsArray) {
   });
 }
 
-// Same idea, but for a top-level container (sharedSteps or one test's
-// steps) — numbers its Action/Assertion groups in one sequence.
+// Same idea, but for a top-level container (scenario.workflow or one
+// test's steps) — numbers its Action/Assertion groups in one sequence.
 function renumberGroups(groupsArray) {
   groupsArray.forEach((group, index) => {
     const refs = blocksById.get(group.id);
@@ -423,7 +436,7 @@ function moveStep(stepId, direction) {
    TEST OPERATIONS
    A test is a named envelope that owns its own list of Action/Assertion
    groups + DOM list. Creating one changes what getActiveContainer()
-   returns, so "+ Action" / "+ Assertion" target it instead of sharedSteps.
+   returns, so "+ Action" / "+ Assertion" target it instead of the workflow.
    ========================================================================== */
 
 function createTestBlockElement(test) {
@@ -497,8 +510,8 @@ function removeTest(testId) {
 
 /* ==========================================================================
    GROUP OPERATIONS (Action / Assertion)
-   A group is a leaf envelope living at the top level of sharedSteps or a
-   test's steps — never nested inside another group. It's never the
+   A group is a leaf envelope living at the top level of scenario.workflow
+   or a test's steps — never nested inside another group. It's never the
    "active container" for the global add buttons; it only grows through its
    own local "+ Add" button, and an Action can only ever hold
    REGULAR_ACTIONS while an Assertion can only ever hold ASSERTION_ACTIONS.
@@ -602,7 +615,7 @@ function addItemToBlock(block, { focus = false } = {}) {
   const initialAction = actionsList[0];
   const config = getFieldConfig(initialAction);
   const step = {
-    id: nextStepId(),
+    id: isActionBlock(block) ? nextActionId() : nextAssertionId(),
     action: initialAction,
     target: '',
     selection: config.selection ? 'single' : null,
@@ -640,7 +653,7 @@ function clearAll() {
   scenario.scenarioDescription = '';
   scenarioDescriptionInput.value = '';
 
-  scenario.sharedSteps = [];
+  scenario.workflow = [];
   sharedStepsListEl.innerHTML = '';
 
   scenario.tests = [];
@@ -682,13 +695,13 @@ function buildExportObject() {
     scenarioDescription: scenario.scenarioDescription,
   };
 
-  // sharedSteps/tests only make sense once there's an actual branch to
-  // represent (2+ tests). With 0 or 1 tests there's nothing to share
-  // between, so export a single flat `steps` list instead.
+  // A separate `tests` list only makes sense once there's an actual branch
+  // to represent (2+ tests). With 0 or 1 tests there's nothing to branch
+  // from, so the single test's groups just join the workflow directly.
   if (scenario.tests.length > 1) {
     return {
       ...base,
-      sharedSteps: scenario.sharedSteps.map(exportItem),
+      workflow: scenario.workflow.map(exportItem),
       tests: scenario.tests.map((t) => ({
         id: t.id,
         name: t.name,
@@ -697,13 +710,13 @@ function buildExportObject() {
     };
   }
 
-  const flatSteps = scenario.tests.length === 1
-    ? [...scenario.sharedSteps, ...scenario.tests[0].steps]
-    : scenario.sharedSteps;
+  const flatWorkflow = scenario.tests.length === 1
+    ? [...scenario.workflow, ...scenario.tests[0].steps]
+    : scenario.workflow;
 
   return {
     ...base,
-    steps: flatSteps.map(exportItem),
+    workflow: flatWorkflow.map(exportItem),
   };
 }
 
