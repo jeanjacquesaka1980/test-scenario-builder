@@ -330,7 +330,7 @@ label {
   padding: 3px 7px;
 }
 
-.test-name-input {
+.test-title-input {
   flex: 1 1 auto;
   padding: 6px 9px;
   border: 1px solid #a9c6ea;
@@ -412,7 +412,7 @@ label {
   color: #92400e;
 }
 
-.block-name-input {
+.block-title-input {
   flex: 1 1 auto;
   min-width: 80px;
   padding: 5px 8px;
@@ -422,11 +422,11 @@ label {
   color: #1a1d21;
 }
 
-.action-block .block-name-input {
+.action-block .block-title-input {
   border: 1px solid #7fd4c9;
 }
 
-.assertion-block .block-name-input {
+.assertion-block .block-title-input {
   border: 1px solid #f2c88a;
 }
 
@@ -535,7 +535,7 @@ label {
     flex-wrap: wrap;
   }
 
-  .block-name-input {
+  .block-title-input {
     flex: 1 1 100%;
     order: 1;
   }

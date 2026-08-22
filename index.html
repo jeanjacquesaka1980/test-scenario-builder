@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 
@@ -95,7 +95,7 @@
     <div class="test-block" data-test-id="">
       <div class="test-block-header">
         <span class="test-block-badge">Test</span>
-        <input type="text" class="test-name-input" data-field="test-name" placeholder="Test name">
+        <input type="text" class="test-title-input" data-field="test-title" placeholder="Title (optional)">
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
       <div class="test-steps-list steps-list"></div>
@@ -115,7 +115,7 @@
       <div class="block-header">
         <span class="block-badge">Action</span>
         <span class="block-number"></span>
-        <input type="text" class="block-name-input" data-field="block-name" placeholder="Name (optional)">
+        <input type="text" class="block-title-input" data-field="block-title" placeholder="Title (optional)">
         <div class="block-controls">
           <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
           <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
@@ -134,7 +134,7 @@
       <div class="block-header">
         <span class="block-badge">Assertion</span>
         <span class="block-number"></span>
-        <input type="text" class="block-name-input" data-field="block-name" placeholder="Name (optional)">
+        <input type="text" class="block-title-input" data-field="block-title" placeholder="Title (optional)">
         <div class="block-controls">
           <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
           <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
@@ -148,6 +148,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=11"></script>
+  <script src="script.js?v=12"></script>
 </body>
 </html>

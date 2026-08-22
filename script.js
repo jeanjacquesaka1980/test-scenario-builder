@@ -87,10 +87,10 @@ function getFieldConfig(action) {
    - An "Assertion" is a group of one or more assertions.
    - A "Test" is the one named, top-level container (`scenario.tests[n]`).
    Every entry the user adds is always one of these three — there's no bare,
-   ungrouped row. Shape: { id, kind: 'action' | 'assertion', name, actions:
+   ungrouped row. Shape: { id, kind: 'action' | 'assertion', title, actions:
    [...] }. `kind` restricts which actions the group accepts
    (REGULAR_ACTIONS for 'action', ASSERTION_ACTIONS for 'assertion') and
-   which template/theme to render. `name` is optional, freeform — becomes
+   which template/theme to render. `title` is optional, freeform — becomes
    the group's test.step() title. Groups don't nest — a group's own list is
    always flat leaf rows.
 
@@ -158,7 +158,7 @@ function blockActionsList(block) {
 }
 
 const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
-const testsById = new Map(); // test id -> { el, nameInput, listEl }
+const testsById = new Map(); // test id -> { el, titleInput, listEl }
 const blocksById = new Map(); // group id -> { el, listEl, numberEl }
 
 // Every top-level container (scenario.workflow, or one test's steps)
@@ -432,21 +432,21 @@ function createTestBlockElement(test) {
   const blockEl = fragment.querySelector('.test-block');
   blockEl.dataset.testId = test.id;
 
-  const nameInput = blockEl.querySelector('.test-name-input');
+  const titleInput = blockEl.querySelector('.test-title-input');
   const removeBtn = blockEl.querySelector('.btn-remove-test');
   const listEl = blockEl.querySelector('.test-steps-list');
   const addActionBtn = blockEl.querySelector('.btn-add-action-block');
   const addAssertionBtn = blockEl.querySelector('.btn-add-assertion-block');
 
-  nameInput.value = test.name;
-  nameInput.addEventListener('input', () => {
-    test.name = nameInput.value;
+  titleInput.value = test.title;
+  titleInput.addEventListener('input', () => {
+    test.title = titleInput.value;
     updateJsonPreview();
   });
 
   removeBtn.addEventListener('click', () => removeTest(test.id));
 
-  testsById.set(test.id, { el: blockEl, nameInput, listEl });
+  testsById.set(test.id, { el: blockEl, titleInput, listEl });
 
   addActionBtn.addEventListener('click', () => addGroupTo('action', test.steps, listEl));
   addAssertionBtn.addEventListener('click', () => addGroupTo('assertion', test.steps, listEl));
@@ -457,7 +457,7 @@ function createTestBlockElement(test) {
 function addTest({ focus = false } = {}) {
   const test = {
     id: nextTestId(),
-    name: 'Test',
+    title: 'Test',
     steps: [],
   };
   scenario.tests.push(test);
@@ -468,7 +468,7 @@ function addTest({ focus = false } = {}) {
   updateJsonPreview();
 
   if (focus) {
-    testsById.get(test.id).nameInput.focus();
+    testsById.get(test.id).titleInput.focus();
   }
 
   return test;
@@ -517,16 +517,16 @@ function createBlockElement(block) {
   blockEl.dataset.blockId = block.id;
 
   const numberEl = blockEl.querySelector('.block-number');
-  const nameInput = blockEl.querySelector('.block-name-input');
+  const titleInput = blockEl.querySelector('.block-title-input');
   const listEl = blockEl.querySelector('.block-steps-list');
   const addItemBtn = blockEl.querySelector('.btn-add-item');
   const moveUpBtn = blockEl.querySelector('.btn-move-up');
   const moveDownBtn = blockEl.querySelector('.btn-move-down');
   const removeBtn = blockEl.querySelector('.btn-remove-block');
 
-  nameInput.value = block.name;
-  nameInput.addEventListener('input', () => {
-    block.name = nameInput.value;
+  titleInput.value = block.title;
+  titleInput.addEventListener('input', () => {
+    block.title = titleInput.value;
     updateJsonPreview();
   });
 
@@ -545,7 +545,7 @@ function createBlockElement(block) {
 // — calls this with its own fixed target, so there's never any ambiguity
 // about which container it's adding to.
 function addGroupTo(kind, targetArray, targetListEl) {
-  const block = { id: nextBlockId(), kind, name: '', actions: [] };
+  const block = { id: nextBlockId(), kind, title: '', actions: [] };
   targetArray.push(block);
 
   const blockEl = createBlockElement(block);
@@ -691,7 +691,7 @@ function exportStep(s) {
 // it is via its own `id` prefix and `action` field. Internally the group
 // still stores this list on `item.actions` — only the exported key differs.
 function exportItem(item) {
-  return { id: item.id, name: item.name, step: item.actions.map(exportStep) };
+  return { id: item.id, title: item.title, step: item.actions.map(exportStep) };
 }
 
 function buildExportObject() {
@@ -709,7 +709,7 @@ function buildExportObject() {
       workflow: scenario.workflow.map(exportItem),
       tests: scenario.tests.map((t) => ({
         id: t.id,
-        name: t.name,
+        title: t.title,
         steps: t.steps.map(exportItem),
       })),
     };
