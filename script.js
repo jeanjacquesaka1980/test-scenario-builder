@@ -34,13 +34,13 @@ const ACTIONS = [
   'waitFor',
 ];
 
-// Actions allowed inside an assertion block — only assertions belong there.
+// Actions allowed inside an Assertion — only assertions belong there.
 const ASSERTION_ACTIONS = ACTIONS.filter((action) => action.startsWith('assert'));
 
-// Actions allowed inside a step block — the complement of the above, so a
-// step block can never hold an assertion (that's what assertion blocks are
-// for — the two are deliberately mutually exclusive).
-const STEP_ACTIONS = ACTIONS.filter((action) => !action.startsWith('assert'));
+// Actions allowed inside an Action — the complement of the above, so an
+// Action can never hold an assertion (that's what an Assertion is for —
+// the two are deliberately mutually exclusive).
+const REGULAR_ACTIONS = ACTIONS.filter((action) => !action.startsWith('assert'));
 
 // Per-action lookup of which of (target, selection, value) apply.
 // Any action missing from this map falls back to DEFAULT_FIELD_CONFIG below.
@@ -82,38 +82,30 @@ function getFieldConfig(action) {
    STATE
    In-memory only, per the spec (no localStorage).
 
-   Vocabulary:
-   - A "step" is one leaf row: one action (which may itself be an assertion
-     like assertVisible — an assertion is just a step whose action happens
-     to assert something).
-   - A "block" groups several steps under one heading — in export terms,
-     one block is one test.step() call wrapping several actions, same as a
-     standalone step is one test.step() call wrapping a single action.
-     Shape: { id, kind: 'step' | 'assertion', actions: [...] }. `kind` is
-     what the BUILDER uses to restrict which actions the block accepts
-     (STEP_ACTIONS for 'step', ASSERTION_ACTIONS for 'assertion') and which
-     template/theme to render — it's a builder-only concern, dropped on
-     export, since each action already self-describes via its own `action`
-     field (an agent reading the export doesn't need the block's kind, only
-     what's inside it). Blocks don't nest — a block's own list is always
-     flat steps, never another block.
-   - A "test" is the one named, top-level container (`scenario.tests[n]`).
+   Vocabulary (UI-facing — the JSON export doesn't have to mirror this):
+   - An "Action" is a group of one or more regular (non-assert) actions.
+   - An "Assertion" is a group of one or more assertions.
+   - A "Test" is the one named, top-level container (`scenario.tests[n]`).
+   Every entry the user adds is always one of these three — there's no bare,
+   ungrouped row. Shape: { id, kind: 'action' | 'assertion', actions: [...] }.
+   `kind` restricts which actions the group accepts (REGULAR_ACTIONS for
+   'action', ASSERTION_ACTIONS for 'assertion') and which template/theme to
+   render. Groups don't nest — a group's own list is always flat leaf rows.
 
-   Both `scenario.sharedSteps` and every `test.steps` are MIXED arrays: each
-   item is either a plain step or a block. They're structurally identical —
-   the only thing special about a test is that it's named and lives in
-   `scenario.tests` rather than being the implicit top-level list.
+   `scenario.sharedSteps` and every `test.steps` hold ONLY Action/Assertion
+   groups — never a Test (a Test can't nest inside a Test either). The only
+   two containers that exist are "shared" (the implicit root) and a Test.
 
-   The "active container" (what "+ Next step" / "+ Step block" /
-   "+ Assertion block" / Enter-to-add-row all target) is sharedSteps until
-   the first "+ New Test" click, then always the most recently created test.
-   A block is never the active container — it only grows through its own
-   local "+ Add" button, regardless of which test is currently active.
+   The "active container" (what "+ Action" / "+ Assertion" target) is
+   sharedSteps until the first "+ New Test" click, then always the most
+   recently created test. A group is never the active container — it only
+   grows through its own local "+ Add" button, regardless of which test is
+   currently active.
 
-   Each step/test/block also has a live DOM row/block tracked in `rowsById`
-   / `testsById` / `blocksById` so fields can be updated in place without
-   re-rendering the whole list (which would blow away focus/cursor position
-   while typing).
+   Each leaf row/test/group also has a live DOM element tracked in
+   `rowsById` / `testsById` / `blocksById` so fields can be updated in place
+   without re-rendering the whole list (which would blow away focus/cursor
+   position while typing).
    ========================================================================== */
 
 const scenario = {
@@ -141,21 +133,17 @@ function nextBlockId() {
   return `block-${blockIdCounter}`;
 }
 
-function isAnyBlock(item) {
-  return Array.isArray(item.actions);
-}
-
-function isStepBlock(item) {
-  return isAnyBlock(item) && item.kind === 'step';
+function isActionBlock(item) {
+  return item.kind === 'action';
 }
 
 function blockActionsList(block) {
-  return block.kind === 'assertion' ? ASSERTION_ACTIONS : STEP_ACTIONS;
+  return block.kind === 'assertion' ? ASSERTION_ACTIONS : REGULAR_ACTIONS;
 }
 
-const rowsById = new Map(); // step id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
+const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
 const testsById = new Map(); // test id -> { el, nameInput, listEl }
-const blocksById = new Map(); // block id -> { el, listEl, numberEl }
+const blocksById = new Map(); // group id -> { el, listEl, numberEl }
 
 function getActiveContainer() {
   if (scenario.tests.length > 0) {
@@ -172,9 +160,9 @@ function getActiveListEl() {
   return sharedStepsListEl;
 }
 
-// Every mixed container (sharedSteps, or one test's steps) paired with its
-// DOM list element — used to search across all of them uniformly.
-function allMixedContainers() {
+// Every top-level container (sharedSteps, or one test's steps) paired with
+// its DOM list element — used to search across all of them uniformly.
+function allTopLevelContainers() {
   const containers = [{ array: scenario.sharedSteps, listEl: sharedStepsListEl }];
   for (const test of scenario.tests) {
     containers.push({ array: test.steps, listEl: testsById.get(test.id).listEl });
@@ -182,41 +170,32 @@ function allMixedContainers() {
   return containers;
 }
 
-// Locate which array a plain step belongs to (a mixed container's top
-// level, or a block's own items), along with its index, the DOM list it
-// renders into, and how to renumber that container after a change.
+// Locate which group a leaf row belongs to, along with its index, the DOM
+// list it renders into, and how to renumber that group after a change.
 function findStepContainer(stepId) {
-  for (const { array, listEl } of allMixedContainers()) {
-    const index = array.findIndex((item) => !isAnyBlock(item) && item.id === stepId);
-    if (index !== -1) {
-      return { array, index, listEl, renumber: () => renumberItems(array) };
-    }
-
-    for (const item of array) {
-      if (!isAnyBlock(item)) continue;
-      const items = item.actions;
-      const itemIndex = items.findIndex((s) => s.id === stepId);
-      if (itemIndex !== -1) {
+  for (const { array } of allTopLevelContainers()) {
+    for (const group of array) {
+      const index = group.actions.findIndex((s) => s.id === stepId);
+      if (index !== -1) {
         return {
-          array: items,
-          index: itemIndex,
-          listEl: blocksById.get(item.id).listEl,
-          renumber: () => renumberSteps(items),
+          array: group.actions,
+          index,
+          listEl: blocksById.get(group.id).listEl,
+          renumber: () => renumberSteps(group.actions),
         };
       }
     }
   }
-
   return null;
 }
 
-// Locate which mixed container a given block belongs to (blocks only ever
-// live at a container's top level — they don't nest).
+// Locate which top-level container a given group belongs to (groups only
+// ever live at a container's top level — they don't nest).
 function findBlockContainer(blockId) {
-  for (const { array, listEl } of allMixedContainers()) {
-    const index = array.findIndex((item) => isAnyBlock(item) && item.id === blockId);
+  for (const { array, listEl } of allTopLevelContainers()) {
+    const index = array.findIndex((item) => item.id === blockId);
     if (index !== -1) {
-      return { array, index, listEl, renumber: () => renumberItems(array) };
+      return { array, index, listEl, renumber: () => renumberGroups(array) };
     }
   }
   return null;
@@ -230,13 +209,12 @@ const scenarioNameInput = document.getElementById('scenario-name');
 const scenarioDescriptionInput = document.getElementById('scenario-description');
 const sharedStepsListEl = document.getElementById('shared-steps-list');
 const testsContainerEl = document.getElementById('tests-container');
-const addStepBtn = document.getElementById('add-step-btn');
-const addStepBlockBtn = document.getElementById('add-step-block-btn');
+const addActionBlockBtn = document.getElementById('add-action-block-btn');
 const addAssertionBlockBtn = document.getElementById('add-assertion-block-btn');
 const addTestBtn = document.getElementById('add-test-btn');
 const rowTemplate = document.getElementById('step-row-template');
 const testBlockTemplate = document.getElementById('test-block-template');
-const stepBlockTemplate = document.getElementById('step-block-template');
+const actionBlockTemplate = document.getElementById('action-block-template');
 const assertionBlockTemplate = document.getElementById('assertion-block-template');
 const jsonPreviewEl = document.getElementById('json-preview');
 const downloadJsonBtn = document.getElementById('download-json-btn');
@@ -268,17 +246,16 @@ function applyFieldVisibility(refs, action) {
   refs.valueInput.hidden = !config.value;
 }
 
-// Create a DOM row for a step, wire up its listeners, and insert it.
-// Does not touch scenario state or append to a container — caller does that.
+// Create a DOM row for one leaf action/assertion inside a group, wire up
+// its listeners, and insert it. Does not touch scenario state or append to
+// a container — caller (addItemToBlock) does that.
 //
-// `context` describes what container this row lives in, since that varies
-// (sharedSteps, a test's mixed steps, or a block's own items):
-//   - actionsList: which actions the row's dropdown offers (ACTIONS,
-//     STEP_ACTIONS, or ASSERTION_ACTIONS)
-//   - isLastRow(): whether this row is currently the last one in its
-//     container, checked live since containers change as rows are added
-//   - onEnterAdd(): what Enter-in-the-last-row should do (add a step to
-//     the active container, or add an item to this specific block)
+// `context`:
+//   - actionsList: REGULAR_ACTIONS or ASSERTION_ACTIONS, depending on the
+//     group's kind
+//   - isLastRow(): whether this row is currently the last one in its group,
+//     checked live since the group's contents change as rows are added
+//   - onEnterAdd(): adds another row to this same group
 function createRowElement(step, context) {
   const fragment = rowTemplate.content.cloneNode(true);
   const rowEl = fragment.querySelector('.step-row');
@@ -344,10 +321,8 @@ function createRowElement(step, context) {
     updateJsonPreview();
   });
 
-  // Enter key in any field of the LAST row adds a new row (per spec).
-  // What "last row" and "add" mean depend on context: for a top-level row
-  // it's the last row of the currently active container; for a row inside
-  // a block it's always that block's own last item.
+  // Enter key in any field of the LAST row in this group adds another row
+  // to the same group (per spec).
   for (const field of [targetInput, valueInput, actionSelect, selectionSelect]) {
     field.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
@@ -366,11 +341,10 @@ function createRowElement(step, context) {
   return rowEl;
 }
 
-// Re-labels the "N." prefix on every row in one flat, steps-only container
-// (a single block's own items) to match its current order, and
-// enables/disables that container's move-up / move-down buttons at its own
-// ends. Numbering restarts at 1 in each container, since each one reads as
-// its own list.
+// Re-labels the "N." prefix on every row inside one group to match its
+// current order, and enables/disables that group's move-up / move-down
+// buttons at its own ends. Numbering restarts at 1 in each group, since
+// each one reads as its own list.
 function renumberSteps(stepsArray) {
   stepsArray.forEach((step, index) => {
     const refs = rowsById.get(step.id);
@@ -381,16 +355,15 @@ function renumberSteps(stepsArray) {
   });
 }
 
-// Same idea, but for a mixed container (sharedSteps or one test's steps) —
-// numbers plain steps and blocks together in one sequence.
-function renumberItems(itemsArray) {
-  itemsArray.forEach((item, index) => {
-    const refs = isAnyBlock(item) ? blocksById.get(item.id) : rowsById.get(item.id);
+// Same idea, but for a top-level container (sharedSteps or one test's
+// steps) — numbers its Action/Assertion groups in one sequence.
+function renumberGroups(groupsArray) {
+  groupsArray.forEach((group, index) => {
+    const refs = blocksById.get(group.id);
     if (!refs) return;
-    const numberEl = isAnyBlock(item) ? refs.numberEl : refs.stepNumberEl;
-    numberEl.textContent = `${index + 1}.`;
+    refs.numberEl.textContent = `${index + 1}.`;
     refs.el.querySelector('.btn-move-up').disabled = index === 0;
-    refs.el.querySelector('.btn-move-down').disabled = index === itemsArray.length - 1;
+    refs.el.querySelector('.btn-move-down').disabled = index === groupsArray.length - 1;
   });
 }
 
@@ -399,47 +372,10 @@ function updateJsonPreview() {
 }
 
 /* ==========================================================================
-   STEP OPERATIONS (add / remove / reorder)
+   STEP OPERATIONS (remove / reorder a leaf row within its group)
    These are the only operations that touch DOM structure (insert/remove/
    move row elements); field edits above mutate in place instead.
    ========================================================================== */
-
-// Adds a step to the currently active container (see getActiveContainer):
-// sharedSteps until a test exists, then the most recently created test.
-function addStep({ focus = false } = {}) {
-  const initialAction = ACTIONS[0];
-  const config = getFieldConfig(initialAction);
-  const step = {
-    id: nextStepId(),
-    action: initialAction,
-    target: '',
-    selection: config.selection ? 'single' : null,
-    value: '',
-  };
-
-  const activeArray = getActiveContainer();
-  const activeListEl = getActiveListEl();
-  activeArray.push(step);
-
-  const rowEl = createRowElement(step, {
-    actionsList: ACTIONS,
-    isLastRow: () => {
-      const arr = getActiveContainer();
-      return arr[arr.length - 1] === step;
-    },
-    onEnterAdd: () => addStep({ focus: true }),
-  });
-  activeListEl.appendChild(rowEl);
-
-  renumberItems(activeArray);
-  updateJsonPreview();
-
-  if (focus) {
-    rowsById.get(step.id).actionSelect.focus();
-  }
-
-  return step;
-}
 
 function removeStep(stepId) {
   const container = findStepContainer(stepId);
@@ -485,10 +421,9 @@ function moveStep(stepId, direction) {
 
 /* ==========================================================================
    TEST OPERATIONS
-   A test is a named envelope that owns its own mixed steps array + DOM
-   list. Creating one changes what getActiveContainer() returns, so all
-   subsequent "+ Next step" / "+ Step block" / "+ Assertion block" /
-   Enter-to-add-row calls target it instead of sharedSteps.
+   A test is a named envelope that owns its own list of Action/Assertion
+   groups + DOM list. Creating one changes what getActiveContainer()
+   returns, so "+ Action" / "+ Assertion" target it instead of sharedSteps.
    ========================================================================== */
 
 function createTestBlockElement(test) {
@@ -515,7 +450,7 @@ function createTestBlockElement(test) {
 function addTest({ focus = false } = {}) {
   const test = {
     id: nextTestId(),
-    name: `Test#${scenario.tests.length + 1}`,
+    name: 'Test',
     steps: [],
   };
   scenario.tests.push(test);
@@ -532,19 +467,15 @@ function addTest({ focus = false } = {}) {
   return test;
 }
 
-// Removes every rowsById/blocksById entry for one mixed container's items,
-// recursing one level into any block's own items. Used when a test (or, in
-// clearAll, everything) is torn down.
-function cleanupMixedItems(itemsArray) {
-  for (const item of itemsArray) {
-    if (isAnyBlock(item)) {
-      for (const nested of item.actions) {
-        rowsById.delete(nested.id);
-      }
-      blocksById.delete(item.id);
-    } else {
-      rowsById.delete(item.id);
+// Removes every rowsById/blocksById entry for one container's groups (and
+// their leaf rows). Used when a test (or, in clearAll, everything) is torn
+// down.
+function cleanupGroups(groupsArray) {
+  for (const group of groupsArray) {
+    for (const leaf of group.actions) {
+      rowsById.delete(leaf.id);
     }
+    blocksById.delete(group.id);
   }
 }
 
@@ -553,7 +484,7 @@ function removeTest(testId) {
   if (index === -1) return;
 
   const [test] = scenario.tests.splice(index, 1);
-  cleanupMixedItems(test.steps);
+  cleanupGroups(test.steps);
 
   const refs = testsById.get(testId);
   if (refs) {
@@ -565,17 +496,16 @@ function removeTest(testId) {
 }
 
 /* ==========================================================================
-   BLOCK OPERATIONS
-   A block (step block or assertion block) is a leaf envelope living at the
-   top level of a mixed container (sharedSteps or a test's steps) — never
-   nested inside another block. It's never the "active container" for the
-   global add buttons; it only grows through its own local "+ Add" button,
-   and a step block can only ever hold STEP_ACTIONS while an assertion
-   block can only ever hold ASSERTION_ACTIONS.
+   GROUP OPERATIONS (Action / Assertion)
+   A group is a leaf envelope living at the top level of sharedSteps or a
+   test's steps — never nested inside another group. It's never the
+   "active container" for the global add buttons; it only grows through its
+   own local "+ Add" button, and an Action can only ever hold
+   REGULAR_ACTIONS while an Assertion can only ever hold ASSERTION_ACTIONS.
    ========================================================================== */
 
 function createBlockElement(block) {
-  const template = isStepBlock(block) ? stepBlockTemplate : assertionBlockTemplate;
+  const template = isActionBlock(block) ? actionBlockTemplate : assertionBlockTemplate;
   const fragment = template.content.cloneNode(true);
   const blockEl = fragment.querySelector('.block');
   blockEl.dataset.blockId = block.id;
@@ -596,8 +526,8 @@ function createBlockElement(block) {
   return blockEl;
 }
 
-// Appends a new, empty block to the currently active container (same
-// active-container rule as "+ Next step" / "+ New Test").
+// Appends a new, empty group to the currently active container (same
+// active-container rule as "+ New Test").
 function insertBlockIntoActiveContainer(block) {
   const activeArray = getActiveContainer();
   const activeListEl = getActiveListEl();
@@ -606,14 +536,14 @@ function insertBlockIntoActiveContainer(block) {
   const blockEl = createBlockElement(block);
   activeListEl.appendChild(blockEl);
 
-  renumberItems(activeArray);
+  renumberGroups(activeArray);
   updateJsonPreview();
 
   return block;
 }
 
-function addStepBlock() {
-  return insertBlockIntoActiveContainer({ id: nextBlockId(), kind: 'step', actions: [] });
+function addActionBlock() {
+  return insertBlockIntoActiveContainer({ id: nextBlockId(), kind: 'action', actions: [] });
 }
 
 function addAssertionBlock() {
@@ -663,9 +593,9 @@ function moveBlock(blockId, direction) {
   updateJsonPreview();
 }
 
-// Adds an item (a step or an assertion, depending on the block's kind) to
-// one specific block. Always targets that block, regardless of which test
-// is "active" — blocks manage their own append.
+// Adds a leaf row (an action or an assertion, depending on the group's
+// kind) to one specific group. Always targets that group, regardless of
+// which test is "active" — groups manage their own append.
 function addItemToBlock(block, { focus = false } = {}) {
   const actionsList = blockActionsList(block);
   const items = block.actions;
@@ -702,7 +632,7 @@ function addItemToBlock(block, { focus = false } = {}) {
    ========================================================================== */
 
 // Wipes scenario name/description, shared steps, and all tests back to the
-// same state the app starts in (one empty step, no tests, no name).
+// same empty state the app starts in.
 function clearAll() {
   scenario.scenarioName = '';
   scenarioNameInput.value = '';
@@ -720,7 +650,6 @@ function clearAll() {
   testsById.clear();
   blocksById.clear();
 
-  addStep(); // restore the single starting row, matching initial load
   updateJsonPreview();
 }
 
@@ -738,18 +667,13 @@ function exportStep(s) {
   };
 }
 
-// Exports one item from a mixed container: a standalone step exports bare
-// (same shape as exportStep — one test.step() call wrapping one action),
-// while ANY block — step block or assertion block alike — exports as
-// { id, actions: [...] } (one test.step() call wrapping several actions).
-// The block's kind (which restricts what the builder let you put in it)
-// is deliberately dropped here: it's a builder-only concern, and each
-// action already says what it is via its own `action` field.
+// Exports one group as { id, actions: [...] } — one test.step() call
+// wrapping its leaf rows. The group's kind (which restricts what the
+// builder let you put in it) is deliberately dropped here: it's a
+// builder-only concern, and each leaf row already says what it is via its
+// own `action` field.
 function exportItem(item) {
-  if (isAnyBlock(item)) {
-    return { id: item.id, actions: item.actions.map(exportStep) };
-  }
-  return exportStep(item);
+  return { id: item.id, actions: item.actions.map(exportStep) };
 }
 
 function buildExportObject() {
@@ -836,8 +760,7 @@ scenarioDescriptionInput.addEventListener('input', () => {
   updateJsonPreview();
 });
 
-addStepBtn.addEventListener('click', () => addStep({ focus: true }));
-addStepBlockBtn.addEventListener('click', () => addStepBlock());
+addActionBlockBtn.addEventListener('click', () => addActionBlock());
 addAssertionBlockBtn.addEventListener('click', () => addAssertionBlock());
 addTestBtn.addEventListener('click', () => addTest({ focus: true }));
 
@@ -862,7 +785,6 @@ clearConfirmBtn.addEventListener('click', () => {
    ========================================================================== */
 
 function init() {
-  addStep(); // start with one empty step row, per the data model
   updateJsonPreview();
 }
 

@@ -255,8 +255,7 @@ label {
   margin-top: 4px;
 }
 
-.btn-add,
-.btn-add-step-block,
+.btn-add-action-block,
 .btn-add-assertion-block,
 .btn-add-test {
   flex: 1 1 160px;
@@ -264,12 +263,12 @@ label {
   color: #444;
 }
 
-.btn-add-step-block {
+.btn-add-action-block {
   color: #0f766e;
   border-color: #7fd4c9;
 }
 
-.btn-add-step-block:hover {
+.btn-add-action-block:hover {
   background: #e6fbf7;
 }
 
@@ -347,14 +346,13 @@ label {
 }
 
 /* ==========================================================================
-   Blocks (step blocks + assertion blocks)
+   Groups (Action + Assertion)
    Both are leaf envelopes that can sit at the top level of sharedSteps or
-   inside a test, alongside plain steps. They share one structure —
-   .block-header / .block-badge / .block-number / .block-controls /
-   .block-steps-list / .btn-add-item — themed by the .step-block or
-   .assertion-block modifier class, and built by one JS function
-   (createBlockElement). Neither participates in the global "+ Next step"
-   active-container flow: each grows only through its own "+ Add" button.
+   inside a test. They share one structure — .block-header / .block-badge /
+   .block-number / .block-controls / .block-steps-list / .btn-add-item —
+   themed by the .action-block or .assertion-block modifier class, and
+   built by one JS function (createBlockElement). Neither participates in
+   the active-container flow: each grows only through its own "+ Add" button.
    ========================================================================== */
 
 .block {
@@ -363,7 +361,7 @@ label {
   margin-top: 10px;
 }
 
-.step-block {
+.action-block {
   border: 1px solid #7fd4c9;
   background: #f2fbf9;
 }
@@ -390,7 +388,7 @@ label {
   padding: 3px 7px;
 }
 
-.step-block .block-badge {
+.action-block .block-badge {
   color: #0f766e;
   background: #d3f5ef;
 }
@@ -406,7 +404,7 @@ label {
   font-variant-numeric: tabular-nums;
 }
 
-.step-block .block-number {
+.action-block .block-number {
   color: #0f766e;
 }
 
@@ -433,12 +431,12 @@ label {
   border-style: dashed;
 }
 
-.step-block .btn-add-item {
+.action-block .btn-add-item {
   color: #0f766e;
   border-color: #7fd4c9;
 }
 
-.step-block .btn-add-item:hover {
+.action-block .btn-add-item:hover {
   background: #e6fbf7;
 }
 
