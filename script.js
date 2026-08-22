@@ -94,13 +94,14 @@ function getFieldConfig(action) {
    the group's test.step() title. Groups don't nest — a group's own list is
    always flat leaf rows.
 
-   `scenario.workflow` and every `test.steps` hold ONLY Action/Assertion
+   `scenario.describe` and every `test.steps` hold ONLY Action/Assertion
    groups — never a Test (a Test can't nest inside a Test either). The only
-   two containers that exist are "workflow" (the implicit root — there's
-   exactly one of these in the whole document) and a Test.
+   two containers that exist are "describe" (the implicit root, named after
+   Playwright's describe() block — there's exactly one of these in the
+   whole document) and a Test.
 
    There's no "active container" — every add targets something explicit:
-   the top-level "+ Action" / "+ Assertion" always add to scenario.workflow;
+   the top-level "+ Action" / "+ Assertion" always add to scenario.describe;
    each Test has its own "+ Action" / "+ Assertion" that always add to that
    specific test, regardless of which test was created most recently. A
    group itself works the same way one level down — it only grows through
@@ -121,7 +122,7 @@ function getFieldConfig(action) {
 const scenario = {
   scenarioName: '',
   scenarioDescription: '',
-  workflow: [],
+  describe: [],
   tests: [],
 };
 
@@ -161,10 +162,10 @@ const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, 
 const testsById = new Map(); // test id -> { el, titleInput, listEl }
 const blocksById = new Map(); // group id -> { el, listEl, numberEl }
 
-// Every top-level container (scenario.workflow, or one test's steps)
+// Every top-level container (scenario.describe, or one test's steps)
 // paired with its DOM list element — used to search across all uniformly.
 function allTopLevelContainers() {
-  const containers = [{ array: scenario.workflow, listEl: sharedStepsListEl }];
+  const containers = [{ array: scenario.describe, listEl: sharedStepsListEl }];
   for (const test of scenario.tests) {
     containers.push({ array: test.steps, listEl: testsById.get(test.id).listEl });
   }
@@ -356,7 +357,7 @@ function renumberSteps(stepsArray) {
   });
 }
 
-// Same idea, but for a top-level container (scenario.workflow or one
+// Same idea, but for a top-level container (scenario.describe or one
 // test's steps) — numbers its Action/Assertion groups in one sequence.
 function renumberGroups(groupsArray) {
   groupsArray.forEach((group, index) => {
@@ -504,7 +505,7 @@ function removeTest(testId) {
 
 /* ==========================================================================
    GROUP OPERATIONS (Action / Assertion)
-   A group is a leaf envelope living at the top level of scenario.workflow
+   A group is a leaf envelope living at the top level of scenario.describe
    or a test's steps — never nested inside another group. An Action can
    only ever hold REGULAR_ACTIONS while an Assertion can only ever hold
    ASSERTION_ACTIONS.
@@ -540,7 +541,7 @@ function createBlockElement(block) {
 }
 
 // Appends a new, empty group of the given kind to an explicit target
-// container (scenario.workflow, or one specific test's steps) and its DOM
+// container (scenario.describe, or one specific test's steps) and its DOM
 // list. Every "+ Action" / "+ Assertion" button — top-level or a test's own
 // — calls this with its own fixed target, so there's never any ambiguity
 // about which container it's adding to.
@@ -558,11 +559,11 @@ function addGroupTo(kind, targetArray, targetListEl) {
 }
 
 function addActionBlock() {
-  return addGroupTo('action', scenario.workflow, sharedStepsListEl);
+  return addGroupTo('action', scenario.describe, sharedStepsListEl);
 }
 
 function addAssertionBlock() {
-  return addGroupTo('assertion', scenario.workflow, sharedStepsListEl);
+  return addGroupTo('assertion', scenario.describe, sharedStepsListEl);
 }
 
 function removeBlock(blockId) {
@@ -655,7 +656,7 @@ function clearAll() {
   scenario.scenarioDescription = '';
   scenarioDescriptionInput.value = '';
 
-  scenario.workflow = [];
+  scenario.describe = [];
   sharedStepsListEl.innerHTML = '';
 
   scenario.tests = [];
@@ -702,11 +703,11 @@ function buildExportObject() {
 
   // A separate `tests` list only makes sense once there's an actual branch
   // to represent (2+ tests). With 0 or 1 tests there's nothing to branch
-  // from, so the single test's groups just join the workflow directly.
+  // from, so the single test's groups just join the describe directly.
   if (scenario.tests.length > 1) {
     return {
       ...base,
-      workflow: scenario.workflow.map(exportItem),
+      describe: scenario.describe.map(exportItem),
       tests: scenario.tests.map((t) => ({
         id: t.id,
         title: t.title,
@@ -715,13 +716,13 @@ function buildExportObject() {
     };
   }
 
-  const flatWorkflow = scenario.tests.length === 1
-    ? [...scenario.workflow, ...scenario.tests[0].steps]
-    : scenario.workflow;
+  const flatDescribe = scenario.tests.length === 1
+    ? [...scenario.describe, ...scenario.tests[0].steps]
+    : scenario.describe;
 
   return {
     ...base,
-    workflow: flatWorkflow.map(exportItem),
+    describe: flatDescribe.map(exportItem),
   };
 }
 
