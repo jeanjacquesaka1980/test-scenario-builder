@@ -345,6 +345,16 @@ label {
   background: #fff;
 }
 
+.before-each-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.before-each-container .btn-add-action-block {
+  flex: 1 1 100%;
+}
+
 /* ==========================================================================
    Groups (Action + Assertion) — always live inside a Test. Also reused,
    with an overridden badge, for a Tests scaffold's shared "Before Each".

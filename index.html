@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -96,6 +96,19 @@
     </div>
   </template>
 
+  <!-- Before Each container: holds one-or-more shared Action-only groups
+       (the first fixed, any extra ones removable) that run before every
+       test. Its own "+ Action" always appends at the end — there's no
+       Assertion side since beforeEach never holds assertions. -->
+  <template id="before-each-container-template">
+    <div class="before-each-container">
+      <div class="before-each-list steps-list"></div>
+      <div class="list-controls">
+        <button type="button" class="btn btn-add-action-block">+ Action</button>
+      </div>
+    </div>
+  </template>
+
   <!-- Test block template: a labeled envelope that owns one-or-more Action
        groups followed by one-or-more Assertion groups (the first of each
        fixed, any extra ones removable), and its own title. Its own remove
@@ -164,6 +177,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=21"></script>
+  <script src="script.js?v=22"></script>
 </body>
 </html>

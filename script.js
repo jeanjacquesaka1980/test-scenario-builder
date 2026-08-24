@@ -91,24 +91,26 @@ function getFieldConfig(action) {
      removable (unlike the fixed pieces below), since standalone tests
      don't share anything with each other.
    - "+ Tests" (a one-time scaffold, not repeatable): adds a shared
-     "Before Each" group (Action-only) plus two Test entries — mirrors
-     Playwright's one-beforeEach-per-describe rule. The Before Each block
-     and the first two tests can never be removed; growth from here on
-     happens through "+ Add test" (more tests) and each test's own
-     "+ Action" / "+ Assertion" (more groups). A new Action always inserts
-     right before that test's first Assertion group; a new Assertion
-     always appends at the very end — so actions stay before assertions no
-     matter how many of each a test ends up with.
+     "Before Each" section (one fixed Action-only group) plus two Test
+     entries — mirrors Playwright's one-beforeEach-per-describe rule. The
+     first Before Each group and the first two tests can never be removed;
+     growth from here on happens through "+ Add test" (more tests), the
+     Before Each section's own "+ Action" (more Before Each groups), and
+     each test's own "+ Action" / "+ Assertion" (more groups). A new
+     Action always inserts right before that test's first Assertion group;
+     a new Assertion always appends at the very end — so actions stay
+     before assertions no matter how many of each a test ends up with.
 
    "Test" mode and "Tests" mode can't coexist — picking one while the
    other exists clears it first (with confirmation).
 
    Shape:
-   - scenario.beforeEach: null, or one group { title, actions: [...] } —
-     Action-only, always fixed (mode 'tests' only).
+   - scenario.beforeEach: null, or an array of Action-only groups (mode
+     'tests' only) — same shape as a test's `steps`, just never holding
+     an assertion-kind group.
    - scenario.tests: array of { title, steps: [...], removable }. A test's
      `steps` is itself an array of groups:
-       { kind: 'action' | 'assertion', title, actions: [...], removable }
+       { kind: 'action' | 'assertion' | 'beforeEach', title, actions: [...], removable }
      `removable` gates both the remove button AND (for groups) whether a
      neighboring group can move into that slot — fixed pieces are also
      fixed in position.
@@ -166,21 +168,22 @@ const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, 
 const testsById = new Map(); // test id -> { el, titleInput, listEl }
 const blocksById = new Map(); // group/beforeEach id -> { el, listEl, numberEl }
 
-// Locate which flat leaf list a step belongs to — a test's group's
-// `.actions`, or the beforeEach's `.actions` directly — along with its
-// index, the DOM list it renders into, and how to renumber it after a
+// Locate which flat leaf list a step belongs to — a group's `.actions`,
+// whether the group lives under beforeEach or inside a test — along with
+// its index, the DOM list it renders into, and how to renumber it after a
 // change.
 function findStepContainer(stepId) {
   if (scenario.beforeEach) {
-    const index = scenario.beforeEach.actions.findIndex((s) => s.id === stepId);
-    if (index !== -1) {
-      const beforeEach = scenario.beforeEach;
-      return {
-        array: beforeEach.actions,
-        index,
-        listEl: blocksById.get(beforeEach.id).listEl,
-        renumber: () => renumberSteps(beforeEach.actions),
-      };
+    for (const group of scenario.beforeEach) {
+      const index = group.actions.findIndex((s) => s.id === stepId);
+      if (index !== -1) {
+        return {
+          array: group.actions,
+          index,
+          listEl: blocksById.get(group.id).listEl,
+          renumber: () => renumberSteps(group.actions),
+        };
+      }
     }
   }
 
@@ -200,10 +203,21 @@ function findStepContainer(stepId) {
   return null;
 }
 
-// Locate which test's `steps` array a given group belongs to (groups only
-// ever live inside a test — never nested, and the beforeEach isn't a
-// group of groups so it's never a match here).
+// Locate which array a given group belongs to — the shared beforeEach
+// array, or one test's own `steps` array.
 function findBlockContainer(blockId) {
+  if (scenario.beforeEach) {
+    const index = scenario.beforeEach.findIndex((g) => g.id === blockId);
+    if (index !== -1) {
+      return {
+        array: scenario.beforeEach,
+        index,
+        listEl: beforeEachListEl,
+        renumber: () => renumberGroups(scenario.beforeEach),
+      };
+    }
+  }
+
   for (const test of scenario.tests) {
     const index = test.steps.findIndex((g) => g.id === blockId);
     if (index !== -1) {
@@ -232,9 +246,14 @@ const rowTemplate = document.getElementById('step-row-template');
 const testBlockTemplate = document.getElementById('test-block-template');
 const actionBlockTemplate = document.getElementById('action-block-template');
 const assertionBlockTemplate = document.getElementById('assertion-block-template');
+const beforeEachContainerTemplate = document.getElementById('before-each-container-template');
 const jsonPreviewEl = document.getElementById('json-preview');
 const copyJsonBtn = document.getElementById('copy-json-btn');
 const copyFeedbackEl = document.getElementById('copy-feedback');
+
+// Set once the beforeEach container is created (mode 'tests' only) — the
+// DOM list the shared beforeEach groups render into.
+let beforeEachListEl = null;
 const clearAllBtn = document.getElementById('clear-all-btn');
 const clearConfirmDialog = document.getElementById('clear-confirm-dialog');
 const clearConfirmBtn = document.getElementById('clear-confirm-btn');
@@ -589,8 +608,12 @@ function createTestEntry({ removable }) {
   };
 }
 
-function createBeforeEachEntry() {
+function createFixedBeforeEachGroup() {
   return { id: nextBlockId(), kind: 'beforeEach', title: '', actions: [], removable: false };
+}
+
+function createExtraBeforeEachGroup() {
+  return { id: nextBlockId(), kind: 'beforeEach', title: '', actions: [], removable: true };
 }
 
 function createTestElement(test) {
@@ -683,6 +706,35 @@ function removeTest(testId) {
   updateJsonPreview();
 }
 
+// Renders the shared beforeEach section: one-or-more Action-only groups
+// (the first fixed, any extra ones removable) plus its own local
+// "+ Action" button that always appends at the end — mirrors a test's
+// own group-growth controls, minus the Assertion side since beforeEach
+// never holds assertions.
+function createBeforeEachContainerElement() {
+  const fragment = beforeEachContainerTemplate.content.cloneNode(true);
+  const containerEl = fragment.querySelector('.before-each-container');
+  const listEl = containerEl.querySelector('.before-each-list');
+  const addActionBtn = containerEl.querySelector('.btn-add-action-block');
+
+  beforeEachListEl = listEl;
+
+  for (const group of scenario.beforeEach) {
+    listEl.appendChild(createBlockElement(group));
+  }
+  renumberGroups(scenario.beforeEach);
+
+  addActionBtn.addEventListener('click', () => {
+    const group = createExtraBeforeEachGroup();
+    scenario.beforeEach.push(group);
+    listEl.appendChild(createBlockElement(group));
+    renumberGroups(scenario.beforeEach);
+    updateJsonPreview();
+  });
+
+  return containerEl;
+}
+
 /* ==========================================================================
    MODE OPERATIONS ("+ Test" / "+ Tests" / "+ Add test")
    ========================================================================== */
@@ -713,9 +765,8 @@ function addStandaloneTest({ focus = false } = {}) {
 function createTestsScaffold() {
   scenario.mode = 'tests';
 
-  const beforeEach = createBeforeEachEntry();
-  scenario.beforeEach = beforeEach;
-  sharedStepsListEl.appendChild(createBlockElement(beforeEach));
+  scenario.beforeEach = [createFixedBeforeEachGroup()];
+  sharedStepsListEl.appendChild(createBeforeEachContainerElement());
 
   for (let i = 0; i < 2; i += 1) {
     const test = createTestEntry({ removable: false });
@@ -741,6 +792,7 @@ function resetDescribeOnly() {
   scenario.beforeEach = null;
   scenario.tests = [];
   scenario.mode = null;
+  beforeEachListEl = null;
   sharedStepsListEl.innerHTML = '';
   rowsById.clear();
   testsById.clear();
@@ -836,10 +888,12 @@ function buildExportText() {
   emit(1, '"describe": {');
   emit(2, `"title": ${serializeScalar(scenario.scenarioName)},`);
 
-  if (scenario.beforeEach) {
-    emit(2, '"beforeEach": {');
-    emitGroup(scenario.beforeEach, 3, true);
-    emit(2, '},');
+  if (scenario.beforeEach && scenario.beforeEach.length > 0) {
+    scenario.beforeEach.forEach((group) => {
+      emit(2, '"beforeEach": {');
+      emitGroup(group, 3, true);
+      emit(2, '},');
+    });
   } else {
     emit(2, '"beforeEach": null,');
   }
