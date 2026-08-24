@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -27,7 +27,11 @@
     <!-- Enforces Act + Assert only (Arrange is left to the agent that reads
          this JSON). "+ Test" and "+ Tests" are the only entry points — each
          instantiates a fixed scaffold (Action + Assertion, or a shared
-         beforeEach + two tests) that can't be removed, only grown. -->
+         beforeEach + two tests) that can't be removed, only grown. The
+         first thing either scaffold creates is the fixed "Login and
+         Navigation" block (see login-nav-template) — it's metadata for
+         the agent, not part of the describe/test code, so it lives
+         outside "describe" in the export. -->
     <section class="steps-section">
       <div id="shared-steps-list" class="steps-list"></div>
       <div class="list-controls">
@@ -93,6 +97,33 @@
           <button type="button" class="btn btn-icon btn-remove" title="Remove step">&times;</button>
         </div>
       </div>
+    </div>
+  </template>
+
+  <!-- Login and Navigation: fixed, always the first thing created by
+       either scaffold, never removable. Pure metadata for the agent (who
+       to log in as, what to pick, where to navigate) — not Playwright
+       code, so it's not part of "describe" in the export. -->
+  <template id="login-nav-template">
+    <div class="login-nav-block">
+      <div class="login-nav-header">
+        <span class="login-nav-badge">Login and Navigation</span>
+      </div>
+      <div class="login-subblock">
+        <span class="login-subblock-label">Login</span>
+        <label class="login-field">
+          User type
+          <input type="text" class="login-user-type" placeholder="e.g. admin">
+        </label>
+        <label class="login-field">
+          Unit
+          <input type="text" class="login-unit" placeholder="unit to select">
+        </label>
+      </div>
+      <label class="login-field navigation-flow-field">
+        Navigation flow
+        <input type="text" class="navigation-flow-input" placeholder="e.g. Dashboard > Settings > Billing">
+      </label>
     </div>
   </template>
 
@@ -182,6 +213,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=26"></script>
+  <script src="script.js?v=27"></script>
 </body>
 </html>

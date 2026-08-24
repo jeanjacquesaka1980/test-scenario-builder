@@ -377,6 +377,84 @@ label {
 }
 
 /* ==========================================================================
+   Login and Navigation — fixed metadata block, always first, never
+   removable. Purple accent to read as distinct from Before Each/Test
+   (blue) and Action/Assertion (teal/amber).
+   ========================================================================== */
+
+.login-nav-block {
+  border: 1px solid #c4b5fd;
+  border-radius: 6px;
+  background: #f8f6ff;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-nav-header {
+  display: flex;
+  align-items: center;
+}
+
+.login-nav-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6d28d9;
+  background: #ede9fe;
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+
+.login-subblock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  border: 1px solid #ded8f7;
+  border-radius: 4px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.login-subblock-label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6d28d9;
+}
+
+.login-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+}
+
+.login-field input {
+  padding: 6px 9px;
+  border: 1px solid #c4b5fd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 400;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.navigation-flow-field {
+  width: 100%;
+}
+
+.navigation-flow-field input {
+  flex: 1 1 auto;
+}
+
+/* ==========================================================================
    Groups (Action + Assertion) — always live inside a Test, or as a plain
    Action block inside the shared Before Each section. They share one
    structure — .block-header / .block-badge / .block-number /
