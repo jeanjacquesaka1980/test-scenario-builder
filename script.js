@@ -114,12 +114,12 @@ function getFieldConfig(action) {
      fixed in position.
    - Groups don't nest — a group's own list is always flat leaf rows.
 
-   `id`/`kind` fields exist ONLY on the in-memory objects, to let the
-   builder track and render things (DOM lookups, template selection,
-   restricting which actions a group accepts). They're dropped entirely on
-   export — an agent reading the JSON doesn't need synthetic tracking ids,
-   only content, order, and (for beforeEach vs. test) the `step` vs.
-   `steps` shape difference.
+   `id`/`kind` fields, and the group-as-its-own-nesting-level, exist ONLY
+   on the in-memory objects, to let the builder track and render things
+   (DOM lookups, template selection, restricting which actions a group
+   accepts, enforcing actions-before-assertions). None of that survives to
+   export — see the EXPORT FUNCTIONS section below for the flattened shape
+   an agent actually reads.
 
    Each leaf row/test/group has a live DOM element tracked in `rowsById` /
    `testsById` / `blocksById` so fields can be updated in place without
@@ -776,13 +776,27 @@ function clearAll() {
 /* ==========================================================================
    EXPORT FUNCTIONS
    No `id` or `kind` anywhere — those are builder-only tracking fields.
-   describe.beforeEach vs. a describe.tests[n] entry is told apart purely
-   by shape: a beforeEach/group has `step` (singular, leaf rows directly);
-   a test has `steps` (plural, an array of groups).
+
+   A group (Action or Assertion block) exists in the BUILDER to organize
+   and order things, and to enforce actions-before-assertions — but it
+   isn't exported as its own nested level. Instead, each leaf action's
+   exported object carries the group's title directly (every leaf in one
+   group shares that group's title), and one test's `step` is a single
+   FLAT array of all its leaf actions/assertions in order — not an array
+   of groups. This avoids ever needing the same key ("step") more than
+   once in one object (which plain JSON can't express — a repeated key
+   silently discards everything but the last one when parsed), and keeps
+   an agent's job simple: read `step` top to bottom, use each item's own
+   `title` to know which test.step() it belongs to.
+
+   `test` is always an array (even with one entry), same convention as
+   `step` — singular key name, plural value, so an agent never has to
+   special-case "1 test" vs "many".
    ========================================================================== */
 
-function exportStep(s) {
+function exportStep(s, title) {
   return {
+    title,
     action: s.action,
     target: s.target,
     selection: s.selection,
@@ -790,12 +804,15 @@ function exportStep(s) {
   };
 }
 
-function exportGroup(group) {
-  return { title: group.title, step: group.actions.map(exportStep) };
+// Flattens one group's leaf actions into export-ready step objects, each
+// stamped with that group's title.
+function exportGroupSteps(group) {
+  return group.actions.map((s) => exportStep(s, group.title));
 }
 
 function exportTest(test) {
-  return { title: test.title, steps: test.steps.map(exportGroup) };
+  const step = test.steps.flatMap(exportGroupSteps);
+  return { title: test.title, step };
 }
 
 function buildExportObject() {
@@ -803,8 +820,8 @@ function buildExportObject() {
     scenarioName: scenario.scenarioName,
     scenarioDescription: scenario.scenarioDescription,
     describe: {
-      beforeEach: scenario.beforeEach ? exportGroup(scenario.beforeEach) : null,
-      tests: scenario.tests.map(exportTest),
+      beforeEach: scenario.beforeEach ? { step: exportGroupSteps(scenario.beforeEach) } : null,
+      test: scenario.tests.map(exportTest),
     },
   };
 }
