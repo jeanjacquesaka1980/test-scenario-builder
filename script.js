@@ -114,12 +114,11 @@ function getFieldConfig(action) {
      fixed in position.
    - Groups don't nest — a group's own list is always flat leaf rows.
 
-   `id`/`kind` fields, and the group-as-its-own-nesting-level, exist ONLY
-   on the in-memory objects, to let the builder track and render things
-   (DOM lookups, template selection, restricting which actions a group
-   accepts, enforcing actions-before-assertions). None of that survives to
-   export — see the EXPORT FUNCTIONS section below for the flattened shape
-   an agent actually reads.
+   `id`/`kind` fields exist ONLY on the in-memory objects, to let the
+   builder track and render things (DOM lookups, template selection,
+   restricting which actions a group accepts). They don't survive to
+   export — see the EXPORT section below for the exact shape an agent
+   actually reads (deliberately not strict JSON).
 
    Each leaf row/test/group has a live DOM element tracked in `rowsById` /
    `testsById` / `blocksById` so fields can be updated in place without
@@ -234,7 +233,6 @@ const testBlockTemplate = document.getElementById('test-block-template');
 const actionBlockTemplate = document.getElementById('action-block-template');
 const assertionBlockTemplate = document.getElementById('assertion-block-template');
 const jsonPreviewEl = document.getElementById('json-preview');
-const downloadJsonBtn = document.getElementById('download-json-btn');
 const copyJsonBtn = document.getElementById('copy-json-btn');
 const copyFeedbackEl = document.getElementById('copy-feedback');
 const clearAllBtn = document.getElementById('clear-all-btn');
@@ -383,7 +381,7 @@ function renumberGroups(groupsArray) {
 }
 
 function updateJsonPreview() {
-  jsonPreviewEl.textContent = JSON.stringify(buildExportObject(), null, 2);
+  jsonPreviewEl.textContent = buildExportText();
 }
 
 /* ==========================================================================
@@ -774,77 +772,93 @@ function clearAll() {
 }
 
 /* ==========================================================================
-   EXPORT FUNCTIONS
-   No `id` or `kind` anywhere — those are builder-only tracking fields.
+   EXPORT (deliberately NOT strict JSON)
+   No `id`/`kind` anywhere — those are builder-only tracking fields.
 
-   One rule, applied recursively at every level: one `step` array is
-   paired with exactly one `title` describing it as a whole — never
-   duplicated onto each item inside it. A group (Action/Assertion block)
-   is { title, step: [...leaf actions] }; a test is { title, step:
-   [...groups] } — same shape, one level up, since a test is itself just
-   a titled sequence of groups. Leaf action objects are terminal and carry
-   no title of their own.
+   This is hand-built text, not JSON.stringify(someObject) — a real JS
+   object can't hold the same key twice (the later one just silently wins
+   before stringify ever runs), and the wanted shape needs exactly that:
+   the "step" key repeated once per group (Action/Assertion block) inside
+   a test, and the "test" key repeated once per test at the describe
+   level, each occurrence carrying its own content. That's intentionally
+   not valid JSON — it reads flatter and more code-like for an agent to
+   scan, at the cost of not being machine-parseable via JSON.parse. There
+   is no "Download JSON" button as a result; only "Copy to clipboard".
 
-   `describe.test` is a single test object when there's exactly one test,
-   or an array of them once there are two or more — no array wrapper just
-   to hold one thing, and no key ever repeats within one object (which
-   plain JSON can't express anyway — a repeated key silently keeps only
-   the last occurrence when parsed, quietly losing the rest).
+   Every leaf action/assertion carries its own `title` (copied from the
+   group it's in) — the group is what supplies that shared title.
    ========================================================================== */
 
-function exportStep(s) {
-  return {
-    action: s.action,
-    target: s.target,
-    selection: s.selection,
-    value: s.value,
+// Safely renders one scalar value (string or null) as it should appear in
+// the output text — strings get JSON-correct quoting/escaping, null stays
+// the bare literal `null`.
+function serializeScalar(value) {
+  return value === null ? 'null' : JSON.stringify(value);
+}
+
+function buildExportText() {
+  const lines = [];
+  const emit = (level, text) => lines.push('  '.repeat(level) + text);
+
+  const emitLeaf = (leaf, title, level, isLast) => {
+    emit(level, '{');
+    emit(level + 1, `"title": ${serializeScalar(title)},`);
+    emit(level + 1, `"action": ${serializeScalar(leaf.action)},`);
+    emit(level + 1, `"target": ${serializeScalar(leaf.target)},`);
+    emit(level + 1, `"selection": ${serializeScalar(leaf.selection)},`);
+    emit(level + 1, `"value": ${serializeScalar(leaf.value)}`);
+    emit(level, isLast ? '}' : '},');
   };
-}
 
-function exportGroup(group) {
-  return { title: group.title, step: group.actions.map(exportStep) };
-}
-
-function exportTest(test) {
-  return { title: test.title, step: test.steps.map(exportGroup) };
-}
-
-function buildExportObject() {
-  const tests = scenario.tests.map(exportTest);
-  return {
-    scenarioName: scenario.scenarioName,
-    scenarioDescription: scenario.scenarioDescription,
-    describe: {
-      beforeEach: scenario.beforeEach ? exportGroup(scenario.beforeEach) : null,
-      test: tests.length === 1 ? tests[0] : tests,
-    },
+  const emitGroup = (group, level, isLast) => {
+    emit(level, '"step": [');
+    group.actions.forEach((leaf, i) => {
+      emitLeaf(leaf, group.title, level + 1, i === group.actions.length - 1);
+    });
+    emit(level, isLast ? ']' : '],');
   };
-}
 
-function downloadJson() {
-  const json = JSON.stringify(buildExportObject(), null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  const emitTest = (test, level, isLast) => {
+    emit(level, '"test": {');
+    emit(level + 1, `"title": ${serializeScalar(test.title)},`);
+    test.steps.forEach((group, i) => {
+      emitGroup(group, level + 1, i === test.steps.length - 1);
+    });
+    emit(level, isLast ? '}' : '},');
+  };
 
-  const nameSlug = (scenario.scenarioName || 'test-scenario')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '') || 'test-scenario';
+  emit(0, '{');
+  emit(1, `"scenarioName": ${serializeScalar(scenario.scenarioName)},`);
+  emit(1, `"scenarioDescription": ${serializeScalar(scenario.scenarioDescription)},`);
+  emit(1, '"describe": {');
+  emit(2, `"title": ${serializeScalar(scenario.scenarioName)},`);
 
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${nameSlug}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  if (scenario.beforeEach) {
+    emit(2, '"beforeEach": {');
+    emitGroup(scenario.beforeEach, 3, true);
+    emit(2, '},');
+  } else {
+    emit(2, '"beforeEach": null,');
+  }
+
+  if (scenario.tests.length === 0) {
+    emit(2, '"test": null');
+  } else {
+    scenario.tests.forEach((test, i) => {
+      emitTest(test, 2, i === scenario.tests.length - 1);
+    });
+  }
+
+  emit(1, '}');
+  emit(0, '}');
+
+  return lines.join('\n');
 }
 
 async function copyJsonToClipboard() {
-  const json = JSON.stringify(buildExportObject(), null, 2);
+  const text = buildExportText();
   try {
-    await navigator.clipboard.writeText(json);
+    await navigator.clipboard.writeText(text);
     showCopyFeedback('Copied!');
   } catch (err) {
     showCopyFeedback('Copy failed');
@@ -894,7 +908,6 @@ modeTestsBtn.addEventListener('click', () => {
 
 growTestBtn.addEventListener('click', () => growTestsScaffold());
 
-downloadJsonBtn.addEventListener('click', downloadJson);
 copyJsonBtn.addEventListener('click', copyJsonToClipboard);
 
 clearAllBtn.addEventListener('click', () => {

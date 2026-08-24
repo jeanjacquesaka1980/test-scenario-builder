@@ -37,11 +37,11 @@
       </div>
     </section>
 
-    <!-- Export -->
+    <!-- Export. Not strict JSON — see script.js EXPORT section for why —
+         so there's no "Download JSON" file, just copy the text. -->
     <section class="export-section">
-      <h2>Export JSON</h2>
+      <h2>Export</h2>
       <div class="export-buttons">
-        <button type="button" id="download-json-btn" class="btn">Download JSON</button>
         <button type="button" id="copy-json-btn" class="btn">Copy to clipboard</button>
         <span id="copy-feedback" class="copy-feedback" aria-live="polite"></span>
       </div>
@@ -164,6 +164,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=18"></script>
+  <script src="script.js?v=19"></script>
 </body>
 </html>
