@@ -37,9 +37,8 @@ const ACTIONS = [
 // Actions allowed inside an Assertion — only assertions belong there.
 const ASSERTION_ACTIONS = ACTIONS.filter((action) => action.startsWith('assert'));
 
-// Actions allowed inside an Action — the complement of the above, so an
-// Action can never hold an assertion (that's what an Assertion is for —
-// the two are deliberately mutually exclusive).
+// Actions allowed inside an Action (or a shared "Before Each") — the
+// complement of the above, so it can never hold an assertion.
 const REGULAR_ACTIONS = ACTIONS.filter((action) => !action.startsWith('assert'));
 
 // Per-action lookup of which of (target, selection, value) apply.
@@ -82,48 +81,53 @@ function getFieldConfig(action) {
    STATE
    In-memory only, per the spec (no localStorage).
 
-   Vocabulary (UI-facing — the JSON export doesn't have to mirror this):
-   - An "Action" is a group of one or more regular (non-assert) actions.
-   - An "Assertion" is a group of one or more assertions.
-   - A "Test" is the one named, top-level container (`scenario.tests[n]`).
-   Every entry the user adds is always one of these three — there's no bare,
-   ungrouped row. Shape: { id, kind: 'action' | 'assertion', title, actions:
-   [...] }. `kind` restricts which actions the group accepts
-   (REGULAR_ACTIONS for 'action', ASSERTION_ACTIONS for 'assertion') and
-   which template/theme to render. `title` is optional, freeform — becomes
-   the group's test.step() title. Groups don't nest — a group's own list is
-   always flat leaf rows.
+   This tool only builds Act + Assert — Arrange (setup) is left entirely to
+   whatever agent reads the exported JSON. There are exactly two entry
+   points, "+ Test" and "+ Tests", and each instantiates a FIXED scaffold
+   that can be grown but never fully removed:
 
-   `scenario.describe` and every `test.steps` hold ONLY Action/Assertion
-   groups — never a Test (a Test can't nest inside a Test either). The only
-   two containers that exist are "describe" (the implicit root, named after
-   Playwright's describe() block — there's exactly one of these in the
-   whole document) and a Test.
+   - "+ Test" (repeatable): adds one standalone Test — { action group,
+     assertion group }. Every click adds another one; each one IS
+     removable (unlike the fixed pieces below), since standalone tests
+     don't share anything with each other.
+   - "+ Tests" (a one-time scaffold, not repeatable): adds a shared
+     "Before Each" group (Action-only) plus two Test entries — mirrors
+     Playwright's one-beforeEach-per-describe rule. The Before Each block
+     and the first two tests can never be removed; growth from here on
+     happens through "+ Add test" (more tests) and each test's own
+     "+ Assertion" (more assertion groups, always appended at the end).
 
-   There's no "active container" — every add targets something explicit:
-   the top-level "+ Action" / "+ Assertion" always add to scenario.describe;
-   each Test has its own "+ Action" / "+ Assertion" that always add to that
-   specific test, regardless of which test was created most recently. A
-   group itself works the same way one level down — it only grows through
-   its own local "+ Add" button.
+   "Test" mode and "Tests" mode can't coexist — picking one while the
+   other exists clears it first (with confirmation).
 
-   Each leaf row/test/group also has a live DOM element tracked in
-   `rowsById` / `testsById` / `blocksById` so fields can be updated in place
-   without re-rendering the whole list (which would blow away focus/cursor
-   position while typing).
+   Shape:
+   - scenario.describe: array of entries, each either
+       { id, kind: 'beforeEach', title, actions: [...] }   (leaf rows directly)
+       { id, kind: 'test', title, steps: [...], removable }
+     A Test's `steps` is itself an array of groups:
+       { id, kind: 'action' | 'assertion', title, actions: [...], removable }
+     `removable` gates both the remove button AND (for groups) whether a
+     neighboring group can move into that slot — fixed pieces are also
+     fixed in position.
+   - Groups don't nest — a group's own list is always flat leaf rows.
+
+   Each leaf row/test/group has a live DOM element tracked in `rowsById` /
+   `testsById` / `blocksById` so fields can be updated in place without
+   re-rendering the whole list (which would blow away focus/cursor position
+   while typing).
 
    Leaf row ids are prefixed by which kind of group they live in —
-   `action-N` inside an Action, `assertion-N` inside an Assertion — using
-   one global counter per prefix (not reset per group), so every id in the
-   document stays a stable, unique reference regardless of where its group
-   gets moved later.
+   `action-N` inside an Action (or Before Each), `assertion-N` inside an
+   Assertion — using one global counter per prefix (not reset per group),
+   so every id in the document stays a stable, unique reference regardless
+   of where its group gets moved later.
    ========================================================================== */
 
 const scenario = {
   scenarioName: '',
   scenarioDescription: '',
+  mode: null, // null | 'test' | 'tests'
   describe: [],
-  tests: [],
 };
 
 let actionIdCounter = 0;
@@ -150,54 +154,60 @@ function nextBlockId() {
   return `block-${blockIdCounter}`;
 }
 
-function isActionBlock(item) {
-  return item.kind === 'action';
-}
-
 function blockActionsList(block) {
   return block.kind === 'assertion' ? ASSERTION_ACTIONS : REGULAR_ACTIONS;
 }
 
 const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
 const testsById = new Map(); // test id -> { el, titleInput, listEl }
-const blocksById = new Map(); // group id -> { el, listEl, numberEl }
+const blocksById = new Map(); // group/beforeEach id -> { el, listEl, numberEl }
 
-// Every top-level container (scenario.describe, or one test's steps)
-// paired with its DOM list element — used to search across all uniformly.
-function allTopLevelContainers() {
-  const containers = [{ array: scenario.describe, listEl: sharedStepsListEl }];
-  for (const test of scenario.tests) {
-    containers.push({ array: test.steps, listEl: testsById.get(test.id).listEl });
-  }
-  return containers;
-}
-
-// Locate which group a leaf row belongs to, along with its index, the DOM
-// list it renders into, and how to renumber that group after a change.
+// Locate which flat leaf list a step belongs to — a test's group's
+// `.actions`, or a beforeEach's `.actions` directly — along with its
+// index, the DOM list it renders into, and how to renumber it after a
+// change.
 function findStepContainer(stepId) {
-  for (const { array } of allTopLevelContainers()) {
-    for (const group of array) {
-      const index = group.actions.findIndex((s) => s.id === stepId);
+  for (const entry of scenario.describe) {
+    if (entry.kind === 'beforeEach') {
+      const index = entry.actions.findIndex((s) => s.id === stepId);
       if (index !== -1) {
         return {
-          array: group.actions,
+          array: entry.actions,
           index,
-          listEl: blocksById.get(group.id).listEl,
-          renumber: () => renumberSteps(group.actions),
+          listEl: blocksById.get(entry.id).listEl,
+          renumber: () => renumberSteps(entry.actions),
         };
+      }
+    } else {
+      for (const group of entry.steps) {
+        const index = group.actions.findIndex((s) => s.id === stepId);
+        if (index !== -1) {
+          return {
+            array: group.actions,
+            index,
+            listEl: blocksById.get(group.id).listEl,
+            renumber: () => renumberSteps(group.actions),
+          };
+        }
       }
     }
   }
   return null;
 }
 
-// Locate which top-level container a given group belongs to (groups only
-// ever live at a container's top level — they don't nest).
+// Locate which test's `steps` array a given group belongs to (groups only
+// ever live inside a test — never at the describe root, never nested).
 function findBlockContainer(blockId) {
-  for (const { array, listEl } of allTopLevelContainers()) {
-    const index = array.findIndex((item) => item.id === blockId);
+  for (const entry of scenario.describe) {
+    if (entry.kind !== 'test') continue;
+    const index = entry.steps.findIndex((g) => g.id === blockId);
     if (index !== -1) {
-      return { array, index, listEl, renumber: () => renumberGroups(array) };
+      return {
+        array: entry.steps,
+        index,
+        listEl: testsById.get(entry.id).listEl,
+        renumber: () => renumberGroups(entry.steps),
+      };
     }
   }
   return null;
@@ -210,10 +220,9 @@ function findBlockContainer(blockId) {
 const scenarioNameInput = document.getElementById('scenario-name');
 const scenarioDescriptionInput = document.getElementById('scenario-description');
 const sharedStepsListEl = document.getElementById('shared-steps-list');
-const testsContainerEl = document.getElementById('tests-container');
-const addActionBlockBtn = document.getElementById('add-action-block-btn');
-const addAssertionBlockBtn = document.getElementById('add-assertion-block-btn');
-const addTestBtn = document.getElementById('add-test-btn');
+const modeTestBtn = document.getElementById('mode-test-btn');
+const modeTestsBtn = document.getElementById('mode-tests-btn');
+const growTestBtn = document.getElementById('grow-test-btn');
 const rowTemplate = document.getElementById('step-row-template');
 const testBlockTemplate = document.getElementById('test-block-template');
 const actionBlockTemplate = document.getElementById('action-block-template');
@@ -226,6 +235,10 @@ const clearAllBtn = document.getElementById('clear-all-btn');
 const clearConfirmDialog = document.getElementById('clear-confirm-dialog');
 const clearConfirmBtn = document.getElementById('clear-confirm-btn');
 const clearCancelBtn = document.getElementById('clear-cancel-btn');
+const modeSwitchConfirmDialog = document.getElementById('mode-switch-confirm-dialog');
+const modeSwitchMessageEl = document.getElementById('mode-switch-message');
+const modeSwitchConfirmBtn = document.getElementById('mode-switch-confirm-btn');
+const modeSwitchCancelBtn = document.getElementById('mode-switch-cancel-btn');
 
 /* ==========================================================================
    RENDER FUNCTIONS
@@ -248,16 +261,10 @@ function applyFieldVisibility(refs, action) {
   refs.valueInput.hidden = !config.value;
 }
 
-// Create a DOM row for one leaf action/assertion inside a group, wire up
-// its listeners, and insert it. Does not touch scenario state or append to
-// a container — caller (addItemToBlock) does that.
-//
-// `context`:
-//   - actionsList: REGULAR_ACTIONS or ASSERTION_ACTIONS, depending on the
-//     group's kind
-//   - isLastRow(): whether this row is currently the last one in its group,
-//     checked live since the group's contents change as rows are added
-//   - onEnterAdd(): adds another row to this same group
+// Create a DOM row for one leaf action/assertion inside a group (or a
+// beforeEach), wire up its listeners, and insert it. Does not touch
+// scenario state or append to a container — caller (addItemToBlock) does
+// that.
 function createRowElement(step, context) {
   const fragment = rowTemplate.content.cloneNode(true);
   const rowEl = fragment.querySelector('.step-row');
@@ -343,10 +350,11 @@ function createRowElement(step, context) {
   return rowEl;
 }
 
-// Re-labels the "N." prefix on every row inside one group to match its
-// current order, and enables/disables that group's move-up / move-down
-// buttons at its own ends. Numbering restarts at 1 in each group, since
-// each one reads as its own list.
+// Re-labels the "N." prefix on every row inside one flat leaf list (a
+// group's or beforeEach's own items) to match its current order, and
+// enables/disables that list's move-up / move-down buttons at its own
+// ends. Numbering restarts at 1 in each list, since each one reads as its
+// own sequence.
 function renumberSteps(stepsArray) {
   stepsArray.forEach((step, index) => {
     const refs = rowsById.get(step.id);
@@ -357,8 +365,7 @@ function renumberSteps(stepsArray) {
   });
 }
 
-// Same idea, but for a top-level container (scenario.describe or one
-// test's steps) — numbers its Action/Assertion groups in one sequence.
+// Same idea, but for a test's `steps` array of groups.
 function renumberGroups(groupsArray) {
   groupsArray.forEach((group, index) => {
     const refs = blocksById.get(group.id);
@@ -421,204 +428,16 @@ function moveStep(stepId, direction) {
   updateJsonPreview();
 }
 
-/* ==========================================================================
-   TEST OPERATIONS
-   A test is a named envelope that owns its own list of Action/Assertion
-   groups + DOM list, and its own local "+ Action" / "+ Assertion" buttons
-   that always add to that specific test.
-   ========================================================================== */
-
-function createTestBlockElement(test) {
-  const fragment = testBlockTemplate.content.cloneNode(true);
-  const blockEl = fragment.querySelector('.test-block');
-  blockEl.dataset.testId = test.id;
-
-  const titleInput = blockEl.querySelector('.test-title-input');
-  const removeBtn = blockEl.querySelector('.btn-remove-test');
-  const listEl = blockEl.querySelector('.test-steps-list');
-  const addActionBtn = blockEl.querySelector('.btn-add-action-block');
-  const addAssertionBtn = blockEl.querySelector('.btn-add-assertion-block');
-
-  titleInput.value = test.title;
-  titleInput.addEventListener('input', () => {
-    test.title = titleInput.value;
-    updateJsonPreview();
-  });
-
-  removeBtn.addEventListener('click', () => removeTest(test.id));
-
-  testsById.set(test.id, { el: blockEl, titleInput, listEl });
-
-  addActionBtn.addEventListener('click', () => addGroupTo('action', test.steps, listEl));
-  addAssertionBtn.addEventListener('click', () => addGroupTo('assertion', test.steps, listEl));
-
-  return blockEl;
-}
-
-function addTest({ focus = false } = {}) {
-  const test = {
-    id: nextTestId(),
-    title: 'Test',
-    steps: [],
-  };
-  scenario.tests.push(test);
-
-  const blockEl = createTestBlockElement(test);
-  testsContainerEl.appendChild(blockEl);
-
-  updateJsonPreview();
-
-  if (focus) {
-    testsById.get(test.id).titleInput.focus();
-  }
-
-  return test;
-}
-
-// Removes every rowsById/blocksById entry for one container's groups (and
-// their leaf rows). Used when a test (or, in clearAll, everything) is torn
-// down.
-function cleanupGroups(groupsArray) {
-  for (const group of groupsArray) {
-    for (const leaf of group.actions) {
-      rowsById.delete(leaf.id);
-    }
-    blocksById.delete(group.id);
-  }
-}
-
-function removeTest(testId) {
-  const index = scenario.tests.findIndex((t) => t.id === testId);
-  if (index === -1) return;
-
-  const [test] = scenario.tests.splice(index, 1);
-  cleanupGroups(test.steps);
-
-  const refs = testsById.get(testId);
-  if (refs) {
-    refs.el.remove();
-    testsById.delete(testId);
-  }
-
-  updateJsonPreview();
-}
-
-/* ==========================================================================
-   GROUP OPERATIONS (Action / Assertion)
-   A group is a leaf envelope living at the top level of scenario.describe
-   or a test's steps — never nested inside another group. An Action can
-   only ever hold REGULAR_ACTIONS while an Assertion can only ever hold
-   ASSERTION_ACTIONS.
-   ========================================================================== */
-
-function createBlockElement(block) {
-  const template = isActionBlock(block) ? actionBlockTemplate : assertionBlockTemplate;
-  const fragment = template.content.cloneNode(true);
-  const blockEl = fragment.querySelector('.block');
-  blockEl.dataset.blockId = block.id;
-
-  const numberEl = blockEl.querySelector('.block-number');
-  const titleInput = blockEl.querySelector('.block-title-input');
-  const listEl = blockEl.querySelector('.block-steps-list');
-  const addItemBtn = blockEl.querySelector('.btn-add-item');
-  const moveUpBtn = blockEl.querySelector('.btn-move-up');
-  const moveDownBtn = blockEl.querySelector('.btn-move-down');
-  const removeBtn = blockEl.querySelector('.btn-remove-block');
-
-  titleInput.value = block.title;
-  titleInput.addEventListener('input', () => {
-    block.title = titleInput.value;
-    updateJsonPreview();
-  });
-
-  addItemBtn.addEventListener('click', () => addItemToBlock(block, { focus: true }));
-  moveUpBtn.addEventListener('click', () => moveBlock(block.id, -1));
-  moveDownBtn.addEventListener('click', () => moveBlock(block.id, 1));
-  removeBtn.addEventListener('click', () => removeBlock(block.id));
-
-  blocksById.set(block.id, { el: blockEl, listEl, numberEl });
-  return blockEl;
-}
-
-// Appends a new, empty group of the given kind to an explicit target
-// container (scenario.describe, or one specific test's steps) and its DOM
-// list. Every "+ Action" / "+ Assertion" button — top-level or a test's own
-// — calls this with its own fixed target, so there's never any ambiguity
-// about which container it's adding to.
-function addGroupTo(kind, targetArray, targetListEl) {
-  const block = { id: nextBlockId(), kind, title: '', actions: [] };
-  targetArray.push(block);
-
-  const blockEl = createBlockElement(block);
-  targetListEl.appendChild(blockEl);
-
-  renumberGroups(targetArray);
-  updateJsonPreview();
-
-  return block;
-}
-
-function addActionBlock() {
-  return addGroupTo('action', scenario.describe, sharedStepsListEl);
-}
-
-function addAssertionBlock() {
-  return addGroupTo('assertion', scenario.describe, sharedStepsListEl);
-}
-
-function removeBlock(blockId) {
-  const container = findBlockContainer(blockId);
-  if (!container) return;
-  const { array, index } = container;
-
-  const [block] = array.splice(index, 1);
-  for (const item of block.actions) {
-    rowsById.delete(item.id);
-  }
-
-  const refs = blocksById.get(blockId);
-  if (refs) {
-    refs.el.remove();
-    blocksById.delete(blockId);
-  }
-
-  container.renumber();
-  updateJsonPreview();
-}
-
-function moveBlock(blockId, direction) {
-  const container = findBlockContainer(blockId);
-  if (!container) return;
-  const { array, index, listEl } = container;
-
-  const newIndex = index + direction;
-  if (newIndex < 0 || newIndex >= array.length) return;
-
-  const [block] = array.splice(index, 1);
-  array.splice(newIndex, 0, block);
-
-  const refs = blocksById.get(blockId);
-  if (direction < 0) {
-    listEl.insertBefore(refs.el, refs.el.previousElementSibling);
-  } else {
-    const nextSibling = refs.el.nextElementSibling;
-    if (nextSibling) listEl.insertBefore(nextSibling, refs.el);
-  }
-
-  container.renumber();
-  updateJsonPreview();
-}
-
 // Adds a leaf row (an action or an assertion, depending on the group's
-// kind) to one specific group. Always targets that group, regardless of
-// which test is "active" — groups manage their own append.
+// kind) to one specific group or beforeEach. Always targets that one,
+// regardless of anything else on the page.
 function addItemToBlock(block, { focus = false } = {}) {
   const actionsList = blockActionsList(block);
   const items = block.actions;
   const initialAction = actionsList[0];
   const config = getFieldConfig(initialAction);
   const step = {
-    id: isActionBlock(block) ? nextActionId() : nextAssertionId(),
+    id: block.kind === 'assertion' ? nextAssertionId() : nextActionId(),
     action: initialAction,
     target: '',
     selection: config.selection ? 'single' : null,
@@ -644,11 +463,271 @@ function addItemToBlock(block, { focus = false } = {}) {
 }
 
 /* ==========================================================================
-   RESET
+   GROUP OPERATIONS (Action / Assertion groups inside a Test)
+   Every group's REMOVABLE flag gates both its own remove button and
+   whether a neighboring group is allowed to move into its slot — a fixed
+   group is also fixed in position.
    ========================================================================== */
 
-// Wipes scenario name/description, shared steps, and all tests back to the
-// same empty state the app starts in.
+function createBlockElement(block) {
+  const template = block.kind === 'assertion' ? assertionBlockTemplate : actionBlockTemplate;
+  const fragment = template.content.cloneNode(true);
+  const blockEl = fragment.querySelector('.block');
+  blockEl.dataset.blockId = block.id;
+
+  const badgeEl = blockEl.querySelector('.block-badge');
+  const numberEl = blockEl.querySelector('.block-number');
+  const titleInput = blockEl.querySelector('.block-title-input');
+  const listEl = blockEl.querySelector('.block-steps-list');
+  const addItemBtn = blockEl.querySelector('.btn-add-item');
+  const moveUpBtn = blockEl.querySelector('.btn-move-up');
+  const moveDownBtn = blockEl.querySelector('.btn-move-down');
+  const removeBtn = blockEl.querySelector('.btn-remove-block');
+
+  if (block.kind === 'beforeEach') {
+    badgeEl.textContent = 'Before Each';
+    blockEl.classList.add('before-each-block');
+  }
+
+  titleInput.value = block.title;
+  titleInput.addEventListener('input', () => {
+    block.title = titleInput.value;
+    updateJsonPreview();
+  });
+
+  addItemBtn.addEventListener('click', () => addItemToBlock(block, { focus: true }));
+
+  if (block.removable === false) {
+    moveUpBtn.hidden = true;
+    moveDownBtn.hidden = true;
+    removeBtn.hidden = true;
+  } else {
+    moveUpBtn.addEventListener('click', () => moveBlock(block.id, -1));
+    moveDownBtn.addEventListener('click', () => moveBlock(block.id, 1));
+    removeBtn.addEventListener('click', () => removeBlock(block.id));
+  }
+
+  blocksById.set(block.id, { el: blockEl, listEl, numberEl });
+  return blockEl;
+}
+
+function removeBlock(blockId) {
+  const container = findBlockContainer(blockId);
+  if (!container) return;
+  const { array, index } = container;
+  if (array[index].removable === false) return;
+
+  const [block] = array.splice(index, 1);
+  for (const item of block.actions) {
+    rowsById.delete(item.id);
+  }
+
+  const refs = blocksById.get(blockId);
+  if (refs) {
+    refs.el.remove();
+    blocksById.delete(blockId);
+  }
+
+  container.renumber();
+  updateJsonPreview();
+}
+
+function moveBlock(blockId, direction) {
+  const container = findBlockContainer(blockId);
+  if (!container) return;
+  const { array, index, listEl } = container;
+
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= array.length) return;
+  if (array[newIndex].removable === false) return; // can't swap into a fixed slot
+
+  const [block] = array.splice(index, 1);
+  array.splice(newIndex, 0, block);
+
+  const refs = blocksById.get(blockId);
+  if (direction < 0) {
+    listEl.insertBefore(refs.el, refs.el.previousElementSibling);
+  } else {
+    const nextSibling = refs.el.nextElementSibling;
+    if (nextSibling) listEl.insertBefore(nextSibling, refs.el);
+  }
+
+  container.renumber();
+  updateJsonPreview();
+}
+
+/* ==========================================================================
+   TEST OPERATIONS
+   ========================================================================== */
+
+function createFixedActionGroup() {
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: false };
+}
+
+function createFixedAssertionGroup() {
+  return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: false };
+}
+
+function createExtraAssertionGroup() {
+  return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: true };
+}
+
+function createTestEntry({ removable }) {
+  return {
+    id: nextTestId(),
+    kind: 'test',
+    title: '',
+    steps: [createFixedActionGroup(), createFixedAssertionGroup()],
+    removable,
+  };
+}
+
+function createBeforeEachEntry() {
+  return { id: nextBlockId(), kind: 'beforeEach', title: '', actions: [], removable: false };
+}
+
+function createTestElement(test) {
+  const fragment = testBlockTemplate.content.cloneNode(true);
+  const blockEl = fragment.querySelector('.test-block');
+  blockEl.dataset.testId = test.id;
+
+  const titleInput = blockEl.querySelector('.test-title-input');
+  const removeBtn = blockEl.querySelector('.btn-remove-test');
+  const listEl = blockEl.querySelector('.test-steps-list');
+  const addAssertionBtn = blockEl.querySelector('.btn-add-assertion-block');
+
+  titleInput.value = test.title;
+  titleInput.addEventListener('input', () => {
+    test.title = titleInput.value;
+    updateJsonPreview();
+  });
+
+  if (test.removable) {
+    removeBtn.addEventListener('click', () => removeTest(test.id));
+  } else {
+    removeBtn.hidden = true;
+  }
+
+  testsById.set(test.id, { el: blockEl, titleInput, listEl });
+
+  for (const group of test.steps) {
+    listEl.appendChild(createBlockElement(group));
+  }
+  renumberGroups(test.steps);
+
+  addAssertionBtn.addEventListener('click', () => {
+    const group = createExtraAssertionGroup();
+    test.steps.push(group);
+    listEl.appendChild(createBlockElement(group));
+    renumberGroups(test.steps);
+    updateJsonPreview();
+  });
+
+  return blockEl;
+}
+
+function removeTest(testId) {
+  const index = scenario.describe.findIndex((e) => e.kind === 'test' && e.id === testId);
+  if (index === -1) return;
+  if (scenario.describe[index].removable === false) return;
+
+  const [test] = scenario.describe.splice(index, 1);
+  for (const group of test.steps) {
+    for (const item of group.actions) {
+      rowsById.delete(item.id);
+    }
+    blocksById.delete(group.id);
+  }
+
+  const refs = testsById.get(testId);
+  if (refs) {
+    refs.el.remove();
+    testsById.delete(testId);
+  }
+
+  if (scenario.describe.length === 0) {
+    scenario.mode = null;
+    updateModeButtonsVisibility();
+  }
+
+  updateJsonPreview();
+}
+
+/* ==========================================================================
+   MODE OPERATIONS ("+ Test" / "+ Tests" / "+ Add test")
+   ========================================================================== */
+
+function updateModeButtonsVisibility() {
+  modeTestsBtn.hidden = scenario.mode === 'tests';
+  growTestBtn.hidden = scenario.mode !== 'tests';
+}
+
+function addStandaloneTest({ focus = false } = {}) {
+  scenario.mode = 'test';
+  const test = createTestEntry({ removable: true });
+  scenario.describe.push(test);
+
+  const el = createTestElement(test);
+  sharedStepsListEl.appendChild(el);
+
+  updateModeButtonsVisibility();
+  updateJsonPreview();
+
+  if (focus) {
+    testsById.get(test.id).titleInput.focus();
+  }
+
+  return test;
+}
+
+function createTestsScaffold() {
+  scenario.mode = 'tests';
+
+  const beforeEach = createBeforeEachEntry();
+  scenario.describe.push(beforeEach);
+  sharedStepsListEl.appendChild(createBlockElement(beforeEach));
+
+  for (let i = 0; i < 2; i += 1) {
+    const test = createTestEntry({ removable: false });
+    scenario.describe.push(test);
+    sharedStepsListEl.appendChild(createTestElement(test));
+  }
+
+  updateModeButtonsVisibility();
+  updateJsonPreview();
+}
+
+function growTestsScaffold() {
+  const test = createTestEntry({ removable: true });
+  scenario.describe.push(test);
+  sharedStepsListEl.appendChild(createTestElement(test));
+  updateJsonPreview();
+}
+
+// Wipes the describe list and mode back to the initial empty state,
+// without touching the scenario name/description. Used both by "Clear
+// all" and when confirming a Test <-> Tests mode switch.
+function resetDescribeOnly() {
+  scenario.describe = [];
+  scenario.mode = null;
+  sharedStepsListEl.innerHTML = '';
+  rowsById.clear();
+  testsById.clear();
+  blocksById.clear();
+}
+
+let pendingModeSwitch = null;
+
+function requestModeSwitch(targetMode, message) {
+  pendingModeSwitch = targetMode;
+  modeSwitchMessageEl.textContent = message;
+  modeSwitchConfirmDialog.showModal();
+}
+
+/* ==========================================================================
+   RESET ("Clear all")
+   ========================================================================== */
+
 function clearAll() {
   scenario.scenarioName = '';
   scenarioNameInput.value = '';
@@ -656,16 +735,8 @@ function clearAll() {
   scenario.scenarioDescription = '';
   scenarioDescriptionInput.value = '';
 
-  scenario.describe = [];
-  sharedStepsListEl.innerHTML = '';
-
-  scenario.tests = [];
-  testsContainerEl.innerHTML = '';
-
-  rowsById.clear();
-  testsById.clear();
-  blocksById.clear();
-
+  resetDescribeOnly();
+  updateModeButtonsVisibility();
   updateJsonPreview();
 }
 
@@ -683,46 +754,33 @@ function exportStep(s) {
   };
 }
 
-// Exports one group as { id, step: [...] } — the group itself IS one
-// test.step() call wrapping its leaf rows, whether it's an Action or an
-// Assertion, so the wrapping key is just "step" either way (not "actions",
-// which would only describe one of the two kinds). The group's kind (which
-// restricts what the builder let you put in it) is deliberately dropped
-// here: it's a builder-only concern, and each leaf row already says what
-// it is via its own `id` prefix and `action` field. Internally the group
-// still stores this list on `item.actions` — only the exported key differs.
-function exportItem(item) {
-  return { id: item.id, title: item.title, step: item.actions.map(exportStep) };
+// Exports one group (Action or Assertion, inside a test) as
+// { id, title, step: [...] } — one test.step() call. The group's kind
+// (which restricts what the builder let you put in it) is deliberately
+// dropped: it's a builder-only concern, and each leaf row already says
+// what it is via its own `action` field.
+function exportGroup(group) {
+  return { id: group.id, title: group.title, step: group.actions.map(exportStep) };
+}
+
+// Exports one describe-level entry. A beforeEach exports the same
+// { id, title, step } shape as a group (it effectively IS one — an
+// Action-only group in the shared-setup role). A test exports
+// { id, title, steps } — plural, since it holds an array of groups, not
+// leaf rows directly. That's the only signal an agent needs to tell the
+// two apart; no separate "kind" field is exported anywhere.
+function exportDescribeEntry(entry) {
+  if (entry.kind === 'beforeEach') {
+    return { id: entry.id, title: entry.title, step: entry.actions.map(exportStep) };
+  }
+  return { id: entry.id, title: entry.title, steps: entry.steps.map(exportGroup) };
 }
 
 function buildExportObject() {
-  const base = {
+  return {
     scenarioName: scenario.scenarioName,
     scenarioDescription: scenario.scenarioDescription,
-  };
-
-  // A separate `tests` list only makes sense once there's an actual branch
-  // to represent (2+ tests). With 0 or 1 tests there's nothing to branch
-  // from, so the single test's groups just join the describe directly.
-  if (scenario.tests.length > 1) {
-    return {
-      ...base,
-      describe: scenario.describe.map(exportItem),
-      tests: scenario.tests.map((t) => ({
-        id: t.id,
-        title: t.title,
-        steps: t.steps.map(exportItem),
-      })),
-    };
-  }
-
-  const flatDescribe = scenario.tests.length === 1
-    ? [...scenario.describe, ...scenario.tests[0].steps]
-    : scenario.describe;
-
-  return {
-    ...base,
-    describe: flatDescribe.map(exportItem),
+    describe: scenario.describe.map(exportDescribeEntry),
   };
 }
 
@@ -779,9 +837,25 @@ scenarioDescriptionInput.addEventListener('input', () => {
   updateJsonPreview();
 });
 
-addActionBlockBtn.addEventListener('click', () => addActionBlock());
-addAssertionBlockBtn.addEventListener('click', () => addAssertionBlock());
-addTestBtn.addEventListener('click', () => addTest({ focus: true }));
+modeTestBtn.addEventListener('click', () => {
+  if (scenario.mode === 'tests') {
+    requestModeSwitch('test', 'Switching to Test will clear your current Tests setup. Continue?');
+    return;
+  }
+  addStandaloneTest({ focus: true });
+});
+
+modeTestsBtn.addEventListener('click', () => {
+  if (scenario.mode === 'test') {
+    requestModeSwitch('tests', 'Switching to Tests will clear your current Test setup. Continue?');
+    return;
+  }
+  if (scenario.mode === null) {
+    createTestsScaffold();
+  }
+});
+
+growTestBtn.addEventListener('click', () => growTestsScaffold());
 
 downloadJsonBtn.addEventListener('click', downloadJson);
 copyJsonBtn.addEventListener('click', copyJsonToClipboard);
@@ -799,11 +873,30 @@ clearConfirmBtn.addEventListener('click', () => {
   clearConfirmDialog.close();
 });
 
+modeSwitchCancelBtn.addEventListener('click', () => {
+  pendingModeSwitch = null;
+  modeSwitchConfirmDialog.close();
+});
+
+modeSwitchConfirmBtn.addEventListener('click', () => {
+  const target = pendingModeSwitch;
+  pendingModeSwitch = null;
+  modeSwitchConfirmDialog.close();
+
+  resetDescribeOnly();
+  if (target === 'test') {
+    addStandaloneTest({ focus: true });
+  } else if (target === 'tests') {
+    createTestsScaffold();
+  }
+});
+
 /* ==========================================================================
    INIT
    ========================================================================== */
 
 function init() {
+  updateModeButtonsVisibility();
   updateJsonPreview();
 }
 

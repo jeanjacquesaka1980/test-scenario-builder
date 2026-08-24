@@ -255,21 +255,11 @@ label {
   margin-top: 4px;
 }
 
-.btn-add-action-block,
 .btn-add-assertion-block,
 .btn-add-test {
   flex: 1 1 160px;
   border-style: dashed;
   color: #444;
-}
-
-.btn-add-action-block {
-  color: #0f766e;
-  border-color: #7fd4c9;
-}
-
-.btn-add-action-block:hover {
-  background: #e6fbf7;
 }
 
 .btn-add-assertion-block {
@@ -345,14 +335,26 @@ label {
   background: #fff;
 }
 
+.test-block > .btn-add-assertion-block {
+  width: 100%;
+  margin-top: 10px;
+  border-style: dashed;
+  color: #92400e;
+  border-color: #f2c88a;
+}
+
+.test-block > .btn-add-assertion-block:hover {
+  background: #fef3e2;
+}
+
 /* ==========================================================================
-   Groups (Action + Assertion)
-   Both are leaf envelopes that can sit at the top level of sharedSteps or
-   inside a test. They share one structure — .block-header / .block-badge /
-   .block-number / .block-controls / .block-steps-list / .btn-add-item —
-   themed by the .action-block or .assertion-block modifier class, and
-   built by one JS function (createBlockElement). Neither participates in
-   the active-container flow: each grows only through its own "+ Add" button.
+   Groups (Action + Assertion) — always live inside a Test. Also reused,
+   with an overridden badge, for a Tests scaffold's shared "Before Each".
+   They share one structure — .block-header / .block-badge / .block-number
+   / .block-controls / .block-steps-list / .btn-add-item — themed by the
+   .action-block or .assertion-block modifier class, and built by one JS
+   function (createBlockElement). Each grows only through its own local
+   "+ Add" button.
    ========================================================================== */
 
 .block {
@@ -364,6 +366,10 @@ label {
 .action-block {
   border: 1px solid #7fd4c9;
   background: #f2fbf9;
+}
+
+.before-each-block {
+  border-style: dashed;
 }
 
 .assertion-block {

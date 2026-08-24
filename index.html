@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -24,17 +24,16 @@
       <textarea id="scenario-description" rows="2" placeholder="What this scenario covers"></textarea>
     </section>
 
-    <!-- Groups get rendered into here. Every entry is always an Action or
-         Assertion group (never a bare unstyled row). These controls always
-         target the root describe directly — each Test has its own "+ Action" /
-         "+ Assertion" buttons for adding to that specific test. -->
+    <!-- Enforces Act + Assert only (Arrange is left to the agent that reads
+         this JSON). "+ Test" and "+ Tests" are the only entry points — each
+         instantiates a fixed scaffold (Action + Assertion, or a shared
+         beforeEach + two tests) that can't be removed, only grown. -->
     <section class="steps-section">
       <div id="shared-steps-list" class="steps-list"></div>
-      <div id="tests-container"></div>
       <div class="list-controls">
-        <button type="button" id="add-action-block-btn" class="btn btn-add-action-block">+ Action</button>
-        <button type="button" id="add-assertion-block-btn" class="btn btn-add-assertion-block">+ Assertion</button>
-        <button type="button" id="add-test-btn" class="btn btn-add-test">+ Test</button>
+        <button type="button" id="mode-test-btn" class="btn btn-add-test">+ Test</button>
+        <button type="button" id="mode-tests-btn" class="btn btn-add-test">+ Tests</button>
+        <button type="button" id="grow-test-btn" class="btn btn-add-test" hidden>+ Add test</button>
       </div>
     </section>
 
@@ -54,14 +53,24 @@
   <!-- Confirmation dialog for "Clear all". A native <dialog> instead of
        window.confirm() so it renders reliably in every embedding context. -->
   <dialog id="clear-confirm-dialog" class="confirm-dialog">
-    <p>Clear the scenario name and all actions, assertions, and tests? This cannot be undone.</p>
+    <p>Clear the scenario name and everything below? This cannot be undone.</p>
     <div class="confirm-dialog-buttons">
       <button type="button" id="clear-cancel-btn" class="btn">Cancel</button>
       <button type="button" id="clear-confirm-btn" class="btn btn-danger">Clear everything</button>
     </div>
   </dialog>
 
-  <!-- Row template, cloned by JS for each step -->
+  <!-- Confirmation dialog for switching between "Test" mode and "Tests"
+       mode — they can't coexist, so switching clears whatever exists. -->
+  <dialog id="mode-switch-confirm-dialog" class="confirm-dialog">
+    <p id="mode-switch-message"></p>
+    <div class="confirm-dialog-buttons">
+      <button type="button" id="mode-switch-cancel-btn" class="btn">Cancel</button>
+      <button type="button" id="mode-switch-confirm-btn" class="btn btn-danger">Switch</button>
+    </div>
+  </dialog>
+
+  <!-- Row template, cloned by JS for each leaf action/assertion -->
   <template id="step-row-template">
     <div class="step-row" data-step-id="">
       <div class="step-row-main">
@@ -87,10 +96,12 @@
     </div>
   </template>
 
-  <!-- Test block template: a labeled envelope that owns its own list of
-       Action/Assertion groups. Cloned by JS each time "+ Test" is clicked.
-       Its own "+ Action" / "+ Assertion" buttons always target this
-       specific test, regardless of any other test on the page. -->
+  <!-- Test block template: a labeled envelope that owns exactly one fixed
+       Action group, one-or-more Assertion groups (the first fixed, any
+       extra ones grown via "+ Assertion" and removable), and its own
+       title. Its own remove (×) button is present in the markup but hidden
+       by JS for the fixed instances (a standalone test, or the first two
+       inside a Tests scaffold) since those can't be removed. -->
   <template id="test-block-template">
     <div class="test-block" data-test-id="">
       <div class="test-block-header">
@@ -99,17 +110,16 @@
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
       <div class="test-steps-list steps-list"></div>
-      <div class="list-controls">
-        <button type="button" class="btn btn-add-action-block">+ Action</button>
-        <button type="button" class="btn btn-add-assertion-block">+ Assertion</button>
-      </div>
+      <button type="button" class="btn btn-add-assertion-block">+ Assertion</button>
     </div>
   </template>
 
   <!-- Action block template: a leaf envelope that can only hold plain
        interaction actions (no assertions, no nested test). Same structure
        as the assertion block template below — themed differently via the
-       .action-block modifier class — so both are built by one JS function. -->
+       .action-block modifier class — so both are built by one JS function.
+       Also reused, unstyled differently, for a Tests scaffold's shared
+       beforeEach block (its badge text is overridden by JS in that case). -->
   <template id="action-block-template">
     <div class="block action-block" data-block-id="">
       <div class="block-header">
@@ -148,6 +158,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=13"></script>
+  <script src="script.js?v=14"></script>
 </body>
 </html>
