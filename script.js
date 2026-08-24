@@ -104,6 +104,12 @@ function getFieldConfig(action) {
    "Test" mode and "Tests" mode can't coexist — picking one while the
    other exists clears it first (with confirmation).
 
+   The very first thing either scaffold creates is the fixed "Login and
+   Navigation" block (scenario.loginAndNavigation) — who to log in as,
+   what unit to pick, where to navigate. It's pure metadata for the agent,
+   not Playwright code, so unlike beforeEach/tests it's never part of
+   "describe" in the export — it sits alongside "describe" instead.
+
    Shape:
    - scenario.beforeEach: null, or an array of plain Action groups (mode
      'tests' only) — one shared beforeEach, made up of one-or-more Action
@@ -132,6 +138,7 @@ const scenario = {
   scenarioName: '',
   scenarioDescription: '',
   mode: null, // null | 'test' | 'tests'
+  loginAndNavigation: null, // null, or { userType, unit, navigationFlow } — set once, fixed, alongside the first Test/Tests scaffold
   beforeEach: null,
   tests: [],
 };
@@ -247,6 +254,7 @@ const testBlockTemplate = document.getElementById('test-block-template');
 const actionBlockTemplate = document.getElementById('action-block-template');
 const assertionBlockTemplate = document.getElementById('assertion-block-template');
 const beforeEachContainerTemplate = document.getElementById('before-each-container-template');
+const loginNavTemplate = document.getElementById('login-nav-template');
 const jsonPreviewEl = document.getElementById('json-preview');
 const copyJsonBtn = document.getElementById('copy-json-btn');
 const copyFeedbackEl = document.getElementById('copy-feedback');
@@ -731,6 +739,50 @@ function createBeforeEachContainerElement() {
 }
 
 /* ==========================================================================
+   LOGIN AND NAVIGATION (fixed, created once alongside the first Test/Tests
+   scaffold) — pure metadata for the agent, never removable, never part of
+   the describe/test structure.
+   ========================================================================== */
+
+function createLoginAndNavigationElement(data) {
+  const fragment = loginNavTemplate.content.cloneNode(true);
+  const blockEl = fragment.querySelector('.login-nav-block');
+
+  const userTypeInput = blockEl.querySelector('.login-user-type');
+  const unitInput = blockEl.querySelector('.login-unit');
+  const navigationFlowInput = blockEl.querySelector('.navigation-flow-input');
+
+  userTypeInput.value = data.userType;
+  userTypeInput.addEventListener('input', () => {
+    data.userType = userTypeInput.value;
+    updateJsonPreview();
+  });
+
+  unitInput.value = data.unit;
+  unitInput.addEventListener('input', () => {
+    data.unit = unitInput.value;
+    updateJsonPreview();
+  });
+
+  navigationFlowInput.value = data.navigationFlow;
+  navigationFlowInput.addEventListener('input', () => {
+    data.navigationFlow = navigationFlowInput.value;
+    updateJsonPreview();
+  });
+
+  return blockEl;
+}
+
+// Creates scenario.loginAndNavigation and renders it as the first thing in
+// the shared list — but only once; every later call (repeated "+ Test"
+// clicks, "+ Add test") is a no-op.
+function ensureLoginAndNavigation() {
+  if (scenario.loginAndNavigation) return;
+  scenario.loginAndNavigation = { userType: '', unit: '', navigationFlow: '' };
+  sharedStepsListEl.appendChild(createLoginAndNavigationElement(scenario.loginAndNavigation));
+}
+
+/* ==========================================================================
    MODE OPERATIONS ("+ Test" / "+ Tests" / "+ Add test")
    ========================================================================== */
 
@@ -741,6 +793,7 @@ function updateModeButtonsVisibility() {
 
 function addStandaloneTest({ focus = false } = {}) {
   scenario.mode = 'test';
+  ensureLoginAndNavigation();
   const test = createTestEntry({ removable: true });
   scenario.tests.push(test);
 
@@ -759,6 +812,7 @@ function addStandaloneTest({ focus = false } = {}) {
 
 function createTestsScaffold() {
   scenario.mode = 'tests';
+  ensureLoginAndNavigation();
 
   scenario.beforeEach = [createFixedBeforeEachGroup()];
   sharedStepsListEl.appendChild(createBeforeEachContainerElement());
@@ -787,6 +841,7 @@ function resetDescribeOnly() {
   scenario.beforeEach = null;
   scenario.tests = [];
   scenario.mode = null;
+  scenario.loginAndNavigation = null;
   beforeEachListEl = null;
   sharedStepsListEl.innerHTML = '';
   rowsById.clear();
@@ -881,6 +936,22 @@ function buildExportText() {
   emit(0, '{');
   emit(1, `"scenarioName": ${serializeScalar(scenario.scenarioName)},`);
   emit(1, `"scenarioDescription": ${serializeScalar(scenario.scenarioDescription)},`);
+
+  // Metadata for the agent (who logs in, what to pick, where to go) —
+  // deliberately outside "describe" since it isn't Playwright code.
+  if (scenario.loginAndNavigation) {
+    const { userType, unit, navigationFlow } = scenario.loginAndNavigation;
+    emit(1, '"loginAndNavigation": {');
+    emit(2, '"login": {');
+    emit(3, `"userType": ${serializeScalar(userType)},`);
+    emit(3, `"unit": ${serializeScalar(unit)}`);
+    emit(2, '},');
+    emit(2, `"navigationFlow": ${serializeScalar(navigationFlow)}`);
+    emit(1, '},');
+  } else {
+    emit(1, '"loginAndNavigation": null,');
+  }
+
   emit(1, '"describe": {');
   emit(2, `"title": ${serializeScalar(scenario.scenarioName)},`);
 
