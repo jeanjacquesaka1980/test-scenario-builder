@@ -777,26 +777,23 @@ function clearAll() {
    EXPORT FUNCTIONS
    No `id` or `kind` anywhere — those are builder-only tracking fields.
 
-   A group (Action or Assertion block) exists in the BUILDER to organize
-   and order things, and to enforce actions-before-assertions — but it
-   isn't exported as its own nested level. Instead, each leaf action's
-   exported object carries the group's title directly (every leaf in one
-   group shares that group's title), and one test's `step` is a single
-   FLAT array of all its leaf actions/assertions in order — not an array
-   of groups. This avoids ever needing the same key ("step") more than
-   once in one object (which plain JSON can't express — a repeated key
-   silently discards everything but the last one when parsed), and keeps
-   an agent's job simple: read `step` top to bottom, use each item's own
-   `title` to know which test.step() it belongs to.
+   One rule, applied recursively at every level: one `step` array is
+   paired with exactly one `title` describing it as a whole — never
+   duplicated onto each item inside it. A group (Action/Assertion block)
+   is { title, step: [...leaf actions] }; a test is { title, step:
+   [...groups] } — same shape, one level up, since a test is itself just
+   a titled sequence of groups. Leaf action objects are terminal and carry
+   no title of their own.
 
-   `test` is always an array (even with one entry), same convention as
-   `step` — singular key name, plural value, so an agent never has to
-   special-case "1 test" vs "many".
+   `describe.test` is a single test object when there's exactly one test,
+   or an array of them once there are two or more — no array wrapper just
+   to hold one thing, and no key ever repeats within one object (which
+   plain JSON can't express anyway — a repeated key silently keeps only
+   the last occurrence when parsed, quietly losing the rest).
    ========================================================================== */
 
-function exportStep(s, title) {
+function exportStep(s) {
   return {
-    title,
     action: s.action,
     target: s.target,
     selection: s.selection,
@@ -804,24 +801,22 @@ function exportStep(s, title) {
   };
 }
 
-// Flattens one group's leaf actions into export-ready step objects, each
-// stamped with that group's title.
-function exportGroupSteps(group) {
-  return group.actions.map((s) => exportStep(s, group.title));
+function exportGroup(group) {
+  return { title: group.title, step: group.actions.map(exportStep) };
 }
 
 function exportTest(test) {
-  const step = test.steps.flatMap(exportGroupSteps);
-  return { title: test.title, step };
+  return { title: test.title, step: test.steps.map(exportGroup) };
 }
 
 function buildExportObject() {
+  const tests = scenario.tests.map(exportTest);
   return {
     scenarioName: scenario.scenarioName,
     scenarioDescription: scenario.scenarioDescription,
     describe: {
-      beforeEach: scenario.beforeEach ? { step: exportGroupSteps(scenario.beforeEach) } : null,
-      test: scenario.tests.map(exportTest),
+      beforeEach: scenario.beforeEach ? exportGroup(scenario.beforeEach) : null,
+      test: tests.length === 1 ? tests[0] : tests,
     },
   };
 }
