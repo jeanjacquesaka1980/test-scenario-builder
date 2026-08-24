@@ -857,14 +857,16 @@ function buildExportText() {
   };
 
   // One "title" pairs with exactly one "step" array — the group as a
-  // whole, not each leaf action inside it.
+  // whole, not each leaf action inside it. It comes right after the array
+  // closes (not before), so it never sits stacked directly against the
+  // enclosing test's own "title" line.
   const emitGroup = (group, level, isLast) => {
-    emit(level, `"title": ${serializeScalar(group.title)},`);
     emit(level, '"step": [');
     group.actions.forEach((leaf, i) => {
       emitLeaf(leaf, level + 1, i === group.actions.length - 1);
     });
-    emit(level, isLast ? ']' : '],');
+    emit(level, '],');
+    emit(level, `"title": ${serializeScalar(group.title)}${isLast ? '' : ','}`);
   };
 
   const emitTest = (test, level, isLast) => {
