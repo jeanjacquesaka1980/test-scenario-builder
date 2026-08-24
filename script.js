@@ -800,8 +800,9 @@ function buildExportText() {
   const lines = [];
   const emit = (level, text) => lines.push('  '.repeat(level) + text);
 
-  const emitLeaf = (leaf, level, isLast) => {
+  const emitLeaf = (leaf, title, level, isLast) => {
     emit(level, '{');
+    emit(level + 1, `"title": ${serializeScalar(title)},`);
     emit(level + 1, `"action": ${serializeScalar(leaf.action)},`);
     emit(level + 1, `"target": ${serializeScalar(leaf.target)},`);
     emit(level + 1, `"selection": ${serializeScalar(leaf.selection)},`);
@@ -809,13 +810,13 @@ function buildExportText() {
     emit(level, isLast ? '}' : '},');
   };
 
-  // One "title" immediately paired with the one "step" array it describes
-  // — never split across the array's individual items.
+  // The group's title is carried on every leaf inside its "step" array
+  // (same value repeated across the array) — not as a separate key
+  // competing with the test's own title right above it.
   const emitGroup = (group, level, isLast) => {
-    emit(level, `"title": ${serializeScalar(group.title)},`);
     emit(level, '"step": [');
     group.actions.forEach((leaf, i) => {
-      emitLeaf(leaf, level + 1, i === group.actions.length - 1);
+      emitLeaf(leaf, group.title, level + 1, i === group.actions.length - 1);
     });
     emit(level, isLast ? ']' : '],');
   };
