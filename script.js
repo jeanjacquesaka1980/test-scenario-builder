@@ -105,12 +105,12 @@ function getFieldConfig(action) {
    other exists clears it first (with confirmation).
 
    Shape:
-   - scenario.beforeEach: null, or an array of Action-only groups (mode
-     'tests' only) — same shape as a test's `steps`, just never holding
-     an assertion-kind group.
+   - scenario.beforeEach: null, or an array of plain Action groups (mode
+     'tests' only) — one shared beforeEach, made up of one-or-more Action
+     blocks, never an assertion.
    - scenario.tests: array of { title, steps: [...], removable }. A test's
      `steps` is itself an array of groups:
-       { kind: 'action' | 'assertion' | 'beforeEach', title, actions: [...], removable }
+       { kind: 'action' | 'assertion', title, actions: [...], removable }
      `removable` gates both the remove button AND (for groups) whether a
      neighboring group can move into that slot — fixed pieces are also
      fixed in position.
@@ -498,7 +498,6 @@ function createBlockElement(block) {
   const blockEl = fragment.querySelector('.block');
   blockEl.dataset.blockId = block.id;
 
-  const badgeEl = blockEl.querySelector('.block-badge');
   const numberEl = blockEl.querySelector('.block-number');
   const titleInput = blockEl.querySelector('.block-title-input');
   const listEl = blockEl.querySelector('.block-steps-list');
@@ -506,11 +505,6 @@ function createBlockElement(block) {
   const moveUpBtn = blockEl.querySelector('.btn-move-up');
   const moveDownBtn = blockEl.querySelector('.btn-move-down');
   const removeBtn = blockEl.querySelector('.btn-remove-block');
-
-  if (block.kind === 'beforeEach') {
-    badgeEl.textContent = 'Before Each';
-    blockEl.classList.add('before-each-block');
-  }
 
   titleInput.value = block.title;
   titleInput.addEventListener('input', () => {
@@ -609,11 +603,11 @@ function createTestEntry({ removable }) {
 }
 
 function createFixedBeforeEachGroup() {
-  return { id: nextBlockId(), kind: 'beforeEach', title: '', actions: [], removable: false };
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: false };
 }
 
 function createExtraBeforeEachGroup() {
-  return { id: nextBlockId(), kind: 'beforeEach', title: '', actions: [], removable: true };
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: true };
 }
 
 function createTestElement(test) {
@@ -706,10 +700,11 @@ function removeTest(testId) {
   updateJsonPreview();
 }
 
-// Renders the shared beforeEach section: one-or-more Action-only groups
-// (the first fixed, any extra ones removable) plus its own local
-// "+ Action" button that always appends at the end — mirrors a test's
-// own group-growth controls, minus the Assertion side since beforeEach
+// Renders the one shared "Before Each" section: a single labeled envelope
+// holding one-or-more plain Action blocks (the first fixed, any extra
+// ones removable), each an ordinary Action block — never itself labeled
+// "Before Each". Its own local "+ Action" button always appends a new
+// Action block at the end; there's no Assertion side since beforeEach
 // never holds assertions.
 function createBeforeEachContainerElement() {
   const fragment = beforeEachContainerTemplate.content.cloneNode(true);
@@ -889,11 +884,11 @@ function buildExportText() {
   emit(2, `"title": ${serializeScalar(scenario.scenarioName)},`);
 
   if (scenario.beforeEach && scenario.beforeEach.length > 0) {
-    scenario.beforeEach.forEach((group) => {
-      emit(2, '"beforeEach": {');
-      emitGroup(group, 3, true);
-      emit(2, '},');
+    emit(2, '"beforeEach": {');
+    scenario.beforeEach.forEach((group, i) => {
+      emitGroup(group, 3, i === scenario.beforeEach.length - 1);
     });
+    emit(2, '},');
   } else {
     emit(2, '"beforeEach": null,');
   }

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -96,12 +96,17 @@
     </div>
   </template>
 
-  <!-- Before Each container: holds one-or-more shared Action-only groups
-       (the first fixed, any extra ones removable) that run before every
-       test. Its own "+ Action" always appends at the end — there's no
-       Assertion side since beforeEach never holds assertions. -->
+  <!-- Before Each: ONE shared section (labeled once) that runs before
+       every test, holding one-or-more plain Action blocks (the first
+       fixed, any extra ones removable) — not multiple "Before Each"
+       blocks. Its own "+ Action" always appends a new Action block at the
+       end; there's no Assertion side since beforeEach never holds
+       assertions. -->
   <template id="before-each-container-template">
     <div class="before-each-container">
+      <div class="before-each-header">
+        <span class="before-each-badge">Before Each</span>
+      </div>
       <div class="before-each-list steps-list"></div>
       <div class="list-controls">
         <button type="button" class="btn btn-add-action-block">+ Action</button>
@@ -137,8 +142,8 @@
        interaction actions (no assertions, no nested test). Same structure
        as the assertion block template below — themed differently via the
        .action-block modifier class — so both are built by one JS function.
-       Also reused, unstyled differently, for a Tests scaffold's shared
-       beforeEach block (its badge text is overridden by JS in that case). -->
+       Also reused as-is for each Action block inside the shared Before
+       Each section (see before-each-container-template above). -->
   <template id="action-block-template">
     <div class="block action-block" data-block-id="">
       <div class="block-header">
@@ -177,6 +182,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=22"></script>
+  <script src="script.js?v=23"></script>
 </body>
 </html>
