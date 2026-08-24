@@ -250,15 +250,35 @@ label {
 
 .list-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 4px;
 }
 
-.btn-add,
+.btn-add-action-block,
+.btn-add-assertion-block,
 .btn-add-test {
-  flex: 1 1 0;
+  flex: 1 1 160px;
   border-style: dashed;
   color: #444;
+}
+
+.btn-add-action-block {
+  color: #0f766e;
+  border-color: #7fd4c9;
+}
+
+.btn-add-action-block:hover {
+  background: #e6fbf7;
+}
+
+.btn-add-assertion-block {
+  color: #92400e;
+  border-color: #f2c88a;
+}
+
+.btn-add-assertion-block:hover {
+  background: #fef3e2;
 }
 
 .btn-add-test {
@@ -310,7 +330,7 @@ label {
   padding: 3px 7px;
 }
 
-.test-name-input {
+.test-title-input {
   flex: 1 1 auto;
   padding: 6px 9px;
   border: 1px solid #a9c6ea;
@@ -323,6 +343,168 @@ label {
 
 .test-block .step-row {
   background: #fff;
+}
+
+.before-each-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px dashed #a9c6ea;
+  border-radius: 6px;
+  background: #f5f9fe;
+  padding: 10px 12px;
+}
+
+.before-each-header {
+  display: flex;
+  align-items: center;
+}
+
+.before-each-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1a5fb4;
+  background: #dbe9fb;
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+
+.before-each-container .btn-add-action-block {
+  flex: 1 1 100%;
+}
+
+/* ==========================================================================
+   Groups (Action + Assertion) — always live inside a Test, or as a plain
+   Action block inside the shared Before Each section. They share one
+   structure — .block-header / .block-badge / .block-number /
+   .block-controls / .block-steps-list / .btn-add-item — themed by the
+   .action-block or .assertion-block modifier class, and built by one JS
+   function (createBlockElement). Each grows only through its own local
+   "+ Add" button.
+   ========================================================================== */
+
+.block {
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.action-block {
+  border: 1px solid #7fd4c9;
+  background: #f2fbf9;
+}
+
+.assertion-block {
+  border: 1px solid #f2c88a;
+  background: #fffaf0;
+}
+
+.block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.block-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+
+.action-block .block-badge {
+  color: #0f766e;
+  background: #d3f5ef;
+}
+
+.assertion-block .block-badge {
+  color: #92400e;
+  background: #fde9c8;
+}
+
+.block-number {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.action-block .block-number {
+  color: #0f766e;
+}
+
+.assertion-block .block-number {
+  color: #92400e;
+}
+
+.block-title-input {
+  flex: 1 1 auto;
+  min-width: 80px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.action-block .block-title-input {
+  border: 1px solid #7fd4c9;
+}
+
+.assertion-block .block-title-input {
+  border: 1px solid #f2c88a;
+}
+
+.block-controls {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.block .steps-list:not(:empty) {
+  margin-bottom: 10px;
+}
+
+.block .step-row {
+  background: #fff;
+}
+
+.btn-add-item {
+  width: 100%;
+  border-style: dashed;
+}
+
+.action-block .btn-add-item {
+  color: #0f766e;
+  border-color: #7fd4c9;
+}
+
+.action-block .btn-add-item:hover {
+  background: #e6fbf7;
+}
+
+.assertion-block .btn-add-item {
+  color: #92400e;
+  border-color: #f2c88a;
+}
+
+.assertion-block .btn-add-item:hover {
+  background: #fef3e2;
+}
+
+.btn-remove-block {
+  color: #b3261e;
+  border-color: #e3b3b0;
+}
+
+.btn-remove-block:hover {
+  background: #fbeceb;
 }
 
 /* ==========================================================================
@@ -378,5 +560,14 @@ label {
   .step-row-controls {
     margin-left: 0;
     justify-content: flex-end;
+  }
+
+  .block-header {
+    flex-wrap: wrap;
+  }
+
+  .block-title-input {
+    flex: 1 1 100%;
+    order: 1;
   }
 }

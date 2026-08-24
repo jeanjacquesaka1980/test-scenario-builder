@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -24,23 +24,24 @@
       <textarea id="scenario-description" rows="2" placeholder="What this scenario covers"></textarea>
     </section>
 
-    <!-- Step rows get rendered into here. Steps added before the first
-         "+ New Test" click land in the shared list; after that, each
-         "+ Next step" click adds to whichever test block is currently open. -->
+    <!-- Enforces Act + Assert only (Arrange is left to the agent that reads
+         this JSON). "+ Test" and "+ Tests" are the only entry points — each
+         instantiates a fixed scaffold (Action + Assertion, or a shared
+         beforeEach + two tests) that can't be removed, only grown. -->
     <section class="steps-section">
       <div id="shared-steps-list" class="steps-list"></div>
-      <div id="tests-container"></div>
       <div class="list-controls">
-        <button type="button" id="add-step-btn" class="btn btn-add">+ Next step</button>
-        <button type="button" id="add-test-btn" class="btn btn-add-test">+ New Test</button>
+        <button type="button" id="mode-test-btn" class="btn btn-add-test">+ Test</button>
+        <button type="button" id="mode-tests-btn" class="btn btn-add-test">+ Tests</button>
+        <button type="button" id="grow-test-btn" class="btn btn-add-test" hidden>+ Add test</button>
       </div>
     </section>
 
-    <!-- Export -->
+    <!-- Export. Not strict JSON — see script.js EXPORT section for why —
+         so there's no "Download JSON" file, just copy the text. -->
     <section class="export-section">
-      <h2>Export JSON</h2>
+      <h2>Export</h2>
       <div class="export-buttons">
-        <button type="button" id="download-json-btn" class="btn">Download JSON</button>
         <button type="button" id="copy-json-btn" class="btn">Copy to clipboard</button>
         <span id="copy-feedback" class="copy-feedback" aria-live="polite"></span>
       </div>
@@ -52,14 +53,24 @@
   <!-- Confirmation dialog for "Clear all". A native <dialog> instead of
        window.confirm() so it renders reliably in every embedding context. -->
   <dialog id="clear-confirm-dialog" class="confirm-dialog">
-    <p>Clear the scenario name and all steps and tests? This cannot be undone.</p>
+    <p>Clear the scenario name and everything below? This cannot be undone.</p>
     <div class="confirm-dialog-buttons">
       <button type="button" id="clear-cancel-btn" class="btn">Cancel</button>
       <button type="button" id="clear-confirm-btn" class="btn btn-danger">Clear everything</button>
     </div>
   </dialog>
 
-  <!-- Row template, cloned by JS for each step -->
+  <!-- Confirmation dialog for switching between "Test" mode and "Tests"
+       mode — they can't coexist, so switching clears whatever exists. -->
+  <dialog id="mode-switch-confirm-dialog" class="confirm-dialog">
+    <p id="mode-switch-message"></p>
+    <div class="confirm-dialog-buttons">
+      <button type="button" id="mode-switch-cancel-btn" class="btn">Cancel</button>
+      <button type="button" id="mode-switch-confirm-btn" class="btn btn-danger">Switch</button>
+    </div>
+  </dialog>
+
+  <!-- Row template, cloned by JS for each leaf action/assertion -->
   <template id="step-row-template">
     <div class="step-row" data-step-id="">
       <div class="step-row-main">
@@ -85,21 +96,92 @@
     </div>
   </template>
 
-  <!-- Test block template: a labeled envelope that owns its own steps list.
-       Cloned by JS each time "+ New Test" is clicked. -->
+  <!-- Before Each: ONE shared section (labeled once) that runs before
+       every test, holding one-or-more plain Action blocks (the first
+       fixed, any extra ones removable) — not multiple "Before Each"
+       blocks. Its own "+ Action" always appends a new Action block at the
+       end; there's no Assertion side since beforeEach never holds
+       assertions. -->
+  <template id="before-each-container-template">
+    <div class="before-each-container">
+      <div class="before-each-header">
+        <span class="before-each-badge">Before Each</span>
+      </div>
+      <div class="before-each-list steps-list"></div>
+      <div class="list-controls">
+        <button type="button" class="btn btn-add-action-block">+ Action</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Test block template: a labeled envelope that owns one-or-more Action
+       groups followed by one-or-more Assertion groups (the first of each
+       fixed, any extra ones removable), and its own title. Its own remove
+       (×) button is present in the markup but hidden by JS for the fixed
+       instances (a standalone test, or the first two inside a Tests
+       scaffold) since those can't be removed. "+ Action" always inserts
+       right before the first Assertion group; "+ Assertion" always
+       appends at the very end — so actions stay before assertions no
+       matter how many of each exist. -->
   <template id="test-block-template">
     <div class="test-block" data-test-id="">
       <div class="test-block-header">
         <span class="test-block-badge">Test</span>
-        <input type="text" class="test-name-input" data-field="test-name" placeholder="Test name">
+        <input type="text" class="test-title-input" data-field="test-title" placeholder="Title (optional)">
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
       <div class="test-steps-list steps-list"></div>
+      <div class="list-controls">
+        <button type="button" class="btn btn-add-action-block">+ Action</button>
+        <button type="button" class="btn btn-add-assertion-block">+ Assertion</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Action block template: a leaf envelope that can only hold plain
+       interaction actions (no assertions, no nested test). Same structure
+       as the assertion block template below — themed differently via the
+       .action-block modifier class — so both are built by one JS function.
+       Also reused as-is for each Action block inside the shared Before
+       Each section (see before-each-container-template above). -->
+  <template id="action-block-template">
+    <div class="block action-block" data-block-id="">
+      <div class="block-header">
+        <span class="block-badge">Action</span>
+        <span class="block-number"></span>
+        <input type="text" class="block-title-input" data-field="block-title" placeholder="Title (optional)">
+        <div class="block-controls">
+          <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
+          <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
+          <button type="button" class="btn btn-icon btn-remove-block" title="Remove action">&times;</button>
+        </div>
+      </div>
+      <div class="block-steps-list steps-list"></div>
+      <button type="button" class="btn btn-add-item">+ Add action</button>
+    </div>
+  </template>
+
+  <!-- Assertion block template: a leaf envelope that can only hold
+       assertions (no plain action, no nested test). -->
+  <template id="assertion-block-template">
+    <div class="block assertion-block" data-block-id="">
+      <div class="block-header">
+        <span class="block-badge">Assertion</span>
+        <span class="block-number"></span>
+        <input type="text" class="block-title-input" data-field="block-title" placeholder="Title (optional)">
+        <div class="block-controls">
+          <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
+          <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
+          <button type="button" class="btn btn-icon btn-remove-block" title="Remove assertion">&times;</button>
+        </div>
+      </div>
+      <div class="block-steps-list steps-list"></div>
+      <button type="button" class="btn btn-add-item">+ Add assertion</button>
     </div>
   </template>
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=2"></script>
+  <script src="script.js?v=26"></script>
 </body>
 </html>

@@ -34,6 +34,13 @@ const ACTIONS = [
   'waitFor',
 ];
 
+// Actions allowed inside an Assertion — only assertions belong there.
+const ASSERTION_ACTIONS = ACTIONS.filter((action) => action.startsWith('assert'));
+
+// Actions allowed inside an Action (or a shared "Before Each") — the
+// complement of the above, so it can never hold an assertion.
+const REGULAR_ACTIONS = ACTIONS.filter((action) => !action.startsWith('assert'));
+
 // Per-action lookup of which of (target, selection, value) apply.
 // Any action missing from this map falls back to DEFAULT_FIELD_CONFIG below.
 const ACTION_FIELD_CONFIG = {
@@ -74,30 +81,71 @@ function getFieldConfig(action) {
    STATE
    In-memory only, per the spec (no localStorage).
 
-   Steps live in one of two places:
-   - `scenario.sharedSteps`: added before any test block exists. Written
-     once in the export, not repeated per test.
-   - `scenario.tests[n].steps`: once "+ New Test" has been clicked at least
-     once, every "+ Next step" click adds to the MOST RECENTLY created test
-     block (the currently "open" envelope). Clicking "+ New Test" again
-     closes the current block and opens a new one.
+   This tool only builds Act + Assert — Arrange (setup) is left entirely to
+   whatever agent reads the exported JSON. There are exactly two entry
+   points, "+ Test" and "+ Tests", and each instantiates a FIXED scaffold
+   that can be grown but never fully removed:
 
-   Each step/test also has a live DOM row/block tracked in `rowsById` /
-   `testsById` so fields can be updated in place without re-rendering the
-   whole list (which would blow away focus/cursor position while typing).
+   - "+ Test" (repeatable): adds one standalone Test — one Action group +
+     one Assertion group. Every click adds another one; each one IS
+     removable (unlike the fixed pieces below), since standalone tests
+     don't share anything with each other.
+   - "+ Tests" (a one-time scaffold, not repeatable): adds a shared
+     "Before Each" section (one fixed Action-only group) plus two Test
+     entries — mirrors Playwright's one-beforeEach-per-describe rule. The
+     first Before Each group and the first two tests can never be removed;
+     growth from here on happens through "+ Add test" (more tests), the
+     Before Each section's own "+ Action" (more Before Each groups), and
+     each test's own "+ Action" / "+ Assertion" (more groups). A new
+     Action always inserts right before that test's first Assertion group;
+     a new Assertion always appends at the very end — so actions stay
+     before assertions no matter how many of each a test ends up with.
+
+   "Test" mode and "Tests" mode can't coexist — picking one while the
+   other exists clears it first (with confirmation).
+
+   Shape:
+   - scenario.beforeEach: null, or an array of plain Action groups (mode
+     'tests' only) — one shared beforeEach, made up of one-or-more Action
+     blocks, never an assertion.
+   - scenario.tests: array of { title, steps: [...], removable }. A test's
+     `steps` is itself an array of groups:
+       { kind: 'action' | 'assertion', title, actions: [...], removable }
+     `removable` gates both the remove button AND (for groups) whether a
+     neighboring group can move into that slot — fixed pieces are also
+     fixed in position.
+   - Groups don't nest — a group's own list is always flat leaf rows.
+
+   `id`/`kind` fields exist ONLY on the in-memory objects, to let the
+   builder track and render things (DOM lookups, template selection,
+   restricting which actions a group accepts). They don't survive to
+   export — see the EXPORT section below for the exact shape an agent
+   actually reads (deliberately not strict JSON).
+
+   Each leaf row/test/group has a live DOM element tracked in `rowsById` /
+   `testsById` / `blocksById` so fields can be updated in place without
+   re-rendering the whole list (which would blow away focus/cursor position
+   while typing).
    ========================================================================== */
 
 const scenario = {
   scenarioName: '',
   scenarioDescription: '',
-  sharedSteps: [],
+  mode: null, // null | 'test' | 'tests'
+  beforeEach: null,
   tests: [],
 };
 
-let stepIdCounter = 0;
-function nextStepId() {
-  stepIdCounter += 1;
-  return `step-${stepIdCounter}`;
+let actionIdCounter = 0;
+function nextActionId() {
+  actionIdCounter += 1;
+  return `action-${actionIdCounter}`;
+}
+
+let assertionIdCounter = 0;
+function nextAssertionId() {
+  assertionIdCounter += 1;
+  return `assertion-${assertionIdCounter}`;
 }
 
 let testIdCounter = 0;
@@ -106,37 +154,79 @@ function nextTestId() {
   return `test-${testIdCounter}`;
 }
 
-const rowsById = new Map(); // step id -> { el, actionSelect, targetInput, selectionSelect, valueInput }
-const testsById = new Map(); // test id -> { el, nameInput, listEl }
-
-// The container ("+ Next step" target) is always the most recently created
-// test's steps, or sharedSteps if no test block exists yet.
-function getActiveContainer() {
-  if (scenario.tests.length > 0) {
-    return scenario.tests[scenario.tests.length - 1].steps;
-  }
-  return scenario.sharedSteps;
+let blockIdCounter = 0;
+function nextBlockId() {
+  blockIdCounter += 1;
+  return `block-${blockIdCounter}`;
 }
 
-function getActiveListEl() {
-  if (scenario.tests.length > 0) {
-    const lastTest = scenario.tests[scenario.tests.length - 1];
-    return testsById.get(lastTest.id).listEl;
-  }
-  return sharedStepsListEl;
+function blockActionsList(block) {
+  return block.kind === 'assertion' ? ASSERTION_ACTIONS : REGULAR_ACTIONS;
 }
 
-// Locate which array (sharedSteps or a specific test's steps) a step
-// belongs to, along with its index and the DOM list it renders into.
+const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
+const testsById = new Map(); // test id -> { el, titleInput, listEl }
+const blocksById = new Map(); // group/beforeEach id -> { el, listEl, numberEl }
+
+// Locate which flat leaf list a step belongs to — a group's `.actions`,
+// whether the group lives under beforeEach or inside a test — along with
+// its index, the DOM list it renders into, and how to renumber it after a
+// change.
 function findStepContainer(stepId) {
-  let index = scenario.sharedSteps.findIndex((s) => s.id === stepId);
-  if (index !== -1) {
-    return { array: scenario.sharedSteps, index, listEl: sharedStepsListEl };
+  if (scenario.beforeEach) {
+    for (const group of scenario.beforeEach) {
+      const index = group.actions.findIndex((s) => s.id === stepId);
+      if (index !== -1) {
+        return {
+          array: group.actions,
+          index,
+          listEl: blocksById.get(group.id).listEl,
+          renumber: () => renumberSteps(group.actions),
+        };
+      }
+    }
   }
+
   for (const test of scenario.tests) {
-    index = test.steps.findIndex((s) => s.id === stepId);
+    for (const group of test.steps) {
+      const index = group.actions.findIndex((s) => s.id === stepId);
+      if (index !== -1) {
+        return {
+          array: group.actions,
+          index,
+          listEl: blocksById.get(group.id).listEl,
+          renumber: () => renumberSteps(group.actions),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+// Locate which array a given group belongs to — the shared beforeEach
+// array, or one test's own `steps` array.
+function findBlockContainer(blockId) {
+  if (scenario.beforeEach) {
+    const index = scenario.beforeEach.findIndex((g) => g.id === blockId);
     if (index !== -1) {
-      return { array: test.steps, index, listEl: testsById.get(test.id).listEl };
+      return {
+        array: scenario.beforeEach,
+        index,
+        listEl: beforeEachListEl,
+        renumber: () => renumberGroups(scenario.beforeEach),
+      };
+    }
+  }
+
+  for (const test of scenario.tests) {
+    const index = test.steps.findIndex((g) => g.id === blockId);
+    if (index !== -1) {
+      return {
+        array: test.steps,
+        index,
+        listEl: testsById.get(test.id).listEl,
+        renumber: () => renumberGroups(test.steps),
+      };
     }
   }
   return null;
@@ -149,26 +239,36 @@ function findStepContainer(stepId) {
 const scenarioNameInput = document.getElementById('scenario-name');
 const scenarioDescriptionInput = document.getElementById('scenario-description');
 const sharedStepsListEl = document.getElementById('shared-steps-list');
-const testsContainerEl = document.getElementById('tests-container');
-const addStepBtn = document.getElementById('add-step-btn');
-const addTestBtn = document.getElementById('add-test-btn');
+const modeTestBtn = document.getElementById('mode-test-btn');
+const modeTestsBtn = document.getElementById('mode-tests-btn');
+const growTestBtn = document.getElementById('grow-test-btn');
 const rowTemplate = document.getElementById('step-row-template');
 const testBlockTemplate = document.getElementById('test-block-template');
+const actionBlockTemplate = document.getElementById('action-block-template');
+const assertionBlockTemplate = document.getElementById('assertion-block-template');
+const beforeEachContainerTemplate = document.getElementById('before-each-container-template');
 const jsonPreviewEl = document.getElementById('json-preview');
-const downloadJsonBtn = document.getElementById('download-json-btn');
 const copyJsonBtn = document.getElementById('copy-json-btn');
 const copyFeedbackEl = document.getElementById('copy-feedback');
+
+// Set once the beforeEach container is created (mode 'tests' only) — the
+// DOM list the shared beforeEach groups render into.
+let beforeEachListEl = null;
 const clearAllBtn = document.getElementById('clear-all-btn');
 const clearConfirmDialog = document.getElementById('clear-confirm-dialog');
 const clearConfirmBtn = document.getElementById('clear-confirm-btn');
 const clearCancelBtn = document.getElementById('clear-cancel-btn');
+const modeSwitchConfirmDialog = document.getElementById('mode-switch-confirm-dialog');
+const modeSwitchMessageEl = document.getElementById('mode-switch-message');
+const modeSwitchConfirmBtn = document.getElementById('mode-switch-confirm-btn');
+const modeSwitchCancelBtn = document.getElementById('mode-switch-cancel-btn');
 
 /* ==========================================================================
    RENDER FUNCTIONS
    ========================================================================== */
 
-function buildActionOptions(selectEl) {
-  for (const action of ACTIONS) {
+function buildActionOptions(selectEl, actionsList = ACTIONS) {
+  for (const action of actionsList) {
     const opt = document.createElement('option');
     opt.value = action;
     opt.textContent = action;
@@ -184,9 +284,11 @@ function applyFieldVisibility(refs, action) {
   refs.valueInput.hidden = !config.value;
 }
 
-// Create a DOM row for a step, wire up its listeners, and insert it.
-// Does not touch scenario state or append to a container — caller does that.
-function createRowElement(step) {
+// Create a DOM row for one leaf action/assertion inside a group (or the
+// beforeEach), wire up its listeners, and insert it. Does not touch
+// scenario state or append to a container — caller (addItemToBlock) does
+// that.
+function createRowElement(step, context) {
   const fragment = rowTemplate.content.cloneNode(true);
   const rowEl = fragment.querySelector('.step-row');
   rowEl.dataset.stepId = step.id;
@@ -200,7 +302,7 @@ function createRowElement(step) {
   const moveDownBtn = rowEl.querySelector('.btn-move-down');
   const removeBtn = rowEl.querySelector('.btn-remove');
 
-  buildActionOptions(actionSelect);
+  buildActionOptions(actionSelect, context.actionsList);
   actionSelect.value = step.action;
   targetInput.value = step.target;
   selectionSelect.value = step.selection || 'single';
@@ -251,18 +353,14 @@ function createRowElement(step) {
     updateJsonPreview();
   });
 
-  // Enter key in any field of the LAST row adds a new row (per spec).
-  // "Last row" means the last row of whichever container is currently
-  // active (getActiveContainer), so this stays correct even after a new
-  // test block opens and becomes the active container.
+  // Enter key in any field of the LAST row in this group adds another row
+  // to the same group (per spec).
   for (const field of [targetInput, valueInput, actionSelect, selectionSelect]) {
     field.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
-      const activeArray = getActiveContainer();
-      const isLastRow = activeArray[activeArray.length - 1] === step;
-      if (!isLastRow) return;
+      if (!context.isLastRow()) return;
       e.preventDefault();
-      addStep({ focus: true });
+      context.onEnterAdd();
     });
   }
 
@@ -275,11 +373,12 @@ function createRowElement(step) {
   return rowEl;
 }
 
-// Re-labels the "N." prefix on every row in one container (sharedSteps or
-// a single test's steps) to match its current order, and enables/disables
-// that container's move-up / move-down buttons at its own ends. Numbering
-// restarts at 1 in each test block, since each block reads as its own list.
-function renumberContainer(stepsArray) {
+// Re-labels the "N." prefix on every row inside one flat leaf list (a
+// group's or the beforeEach's own items) to match its current order, and
+// enables/disables that list's move-up / move-down buttons at its own
+// ends. Numbering restarts at 1 in each list, since each one reads as its
+// own sequence.
+function renumberSteps(stepsArray) {
   stepsArray.forEach((step, index) => {
     const refs = rowsById.get(step.id);
     if (!refs) return;
@@ -289,45 +388,26 @@ function renumberContainer(stepsArray) {
   });
 }
 
+// Same idea, but for a test's `steps` array of groups.
+function renumberGroups(groupsArray) {
+  groupsArray.forEach((group, index) => {
+    const refs = blocksById.get(group.id);
+    if (!refs) return;
+    refs.numberEl.textContent = `${index + 1}.`;
+    refs.el.querySelector('.btn-move-up').disabled = index === 0;
+    refs.el.querySelector('.btn-move-down').disabled = index === groupsArray.length - 1;
+  });
+}
+
 function updateJsonPreview() {
-  jsonPreviewEl.textContent = JSON.stringify(buildExportObject(), null, 2);
+  jsonPreviewEl.textContent = buildExportText();
 }
 
 /* ==========================================================================
-   STEP OPERATIONS (add / remove / reorder)
+   STEP OPERATIONS (remove / reorder a leaf row within its group)
    These are the only operations that touch DOM structure (insert/remove/
    move row elements); field edits above mutate in place instead.
    ========================================================================== */
-
-// Adds a step to the currently active container (see getActiveContainer):
-// sharedSteps until a test block exists, then the most recently opened test.
-function addStep({ focus = false } = {}) {
-  const initialAction = ACTIONS[0];
-  const config = getFieldConfig(initialAction);
-  const step = {
-    id: nextStepId(),
-    action: initialAction,
-    target: '',
-    selection: config.selection ? 'single' : null,
-    value: '',
-  };
-
-  const activeArray = getActiveContainer();
-  const activeListEl = getActiveListEl();
-  activeArray.push(step);
-
-  const rowEl = createRowElement(step);
-  activeListEl.appendChild(rowEl);
-
-  renumberContainer(activeArray);
-  updateJsonPreview();
-
-  if (focus) {
-    rowsById.get(step.id).actionSelect.focus();
-  }
-
-  return step;
-}
 
 function removeStep(stepId) {
   const container = findStepContainer(stepId);
@@ -342,7 +422,7 @@ function removeStep(stepId) {
     rowsById.delete(stepId);
   }
 
-  renumberContainer(array);
+  container.renumber();
   updateJsonPreview();
 }
 
@@ -367,66 +447,243 @@ function moveStep(stepId, direction) {
     if (nextSibling) listEl.insertBefore(nextSibling, refs.el);
   }
 
-  renumberContainer(array);
+  container.renumber();
+  updateJsonPreview();
+}
+
+// Adds a leaf row (an action or an assertion, depending on the group's
+// kind) to one specific group or the beforeEach. Always targets that one,
+// regardless of anything else on the page.
+function addItemToBlock(block, { focus = false } = {}) {
+  const actionsList = blockActionsList(block);
+  const items = block.actions;
+  const initialAction = actionsList[0];
+  const config = getFieldConfig(initialAction);
+  const step = {
+    id: block.kind === 'assertion' ? nextAssertionId() : nextActionId(),
+    action: initialAction,
+    target: '',
+    selection: config.selection ? 'single' : null,
+    value: '',
+  };
+  items.push(step);
+
+  const rowEl = createRowElement(step, {
+    actionsList,
+    isLastRow: () => items[items.length - 1] === step,
+    onEnterAdd: () => addItemToBlock(block, { focus: true }),
+  });
+  blocksById.get(block.id).listEl.appendChild(rowEl);
+
+  renumberSteps(items);
+  updateJsonPreview();
+
+  if (focus) {
+    rowsById.get(step.id).actionSelect.focus();
+  }
+
+  return step;
+}
+
+/* ==========================================================================
+   GROUP OPERATIONS (Action / Assertion groups inside a Test)
+   Every group's REMOVABLE flag gates both its own remove button and
+   whether a neighboring group is allowed to move into its slot — a fixed
+   group is also fixed in position.
+   ========================================================================== */
+
+function createBlockElement(block) {
+  const template = block.kind === 'assertion' ? assertionBlockTemplate : actionBlockTemplate;
+  const fragment = template.content.cloneNode(true);
+  const blockEl = fragment.querySelector('.block');
+  blockEl.dataset.blockId = block.id;
+
+  const numberEl = blockEl.querySelector('.block-number');
+  const titleInput = blockEl.querySelector('.block-title-input');
+  const listEl = blockEl.querySelector('.block-steps-list');
+  const addItemBtn = blockEl.querySelector('.btn-add-item');
+  const moveUpBtn = blockEl.querySelector('.btn-move-up');
+  const moveDownBtn = blockEl.querySelector('.btn-move-down');
+  const removeBtn = blockEl.querySelector('.btn-remove-block');
+
+  titleInput.value = block.title;
+  titleInput.addEventListener('input', () => {
+    block.title = titleInput.value;
+    updateJsonPreview();
+  });
+
+  addItemBtn.addEventListener('click', () => addItemToBlock(block, { focus: true }));
+
+  if (block.removable === false) {
+    moveUpBtn.hidden = true;
+    moveDownBtn.hidden = true;
+    removeBtn.hidden = true;
+  } else {
+    moveUpBtn.addEventListener('click', () => moveBlock(block.id, -1));
+    moveDownBtn.addEventListener('click', () => moveBlock(block.id, 1));
+    removeBtn.addEventListener('click', () => removeBlock(block.id));
+  }
+
+  blocksById.set(block.id, { el: blockEl, listEl, numberEl });
+  return blockEl;
+}
+
+function removeBlock(blockId) {
+  const container = findBlockContainer(blockId);
+  if (!container) return;
+  const { array, index } = container;
+  if (array[index].removable === false) return;
+
+  const [block] = array.splice(index, 1);
+  for (const item of block.actions) {
+    rowsById.delete(item.id);
+  }
+
+  const refs = blocksById.get(blockId);
+  if (refs) {
+    refs.el.remove();
+    blocksById.delete(blockId);
+  }
+
+  container.renumber();
+  updateJsonPreview();
+}
+
+function moveBlock(blockId, direction) {
+  const container = findBlockContainer(blockId);
+  if (!container) return;
+  const { array, index, listEl } = container;
+
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= array.length) return;
+  if (array[newIndex].removable === false) return; // can't swap into a fixed slot
+
+  const [block] = array.splice(index, 1);
+  array.splice(newIndex, 0, block);
+
+  const refs = blocksById.get(blockId);
+  if (direction < 0) {
+    listEl.insertBefore(refs.el, refs.el.previousElementSibling);
+  } else {
+    const nextSibling = refs.el.nextElementSibling;
+    if (nextSibling) listEl.insertBefore(nextSibling, refs.el);
+  }
+
+  container.renumber();
   updateJsonPreview();
 }
 
 /* ==========================================================================
-   TEST BLOCK OPERATIONS
-   A test block is a named envelope that owns its own steps array + DOM
-   list. Creating one changes what getActiveContainer() returns, so all
-   subsequent "+ Next step" / Enter-to-add-row calls target it instead of
-   sharedSteps.
+   TEST OPERATIONS
    ========================================================================== */
 
-function createTestBlockElement(test) {
+function createFixedActionGroup() {
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: false };
+}
+
+function createFixedAssertionGroup() {
+  return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: false };
+}
+
+function createExtraActionGroup() {
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: true };
+}
+
+function createExtraAssertionGroup() {
+  return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: true };
+}
+
+function createTestEntry({ removable }) {
+  return {
+    id: nextTestId(),
+    title: '',
+    steps: [createFixedActionGroup(), createFixedAssertionGroup()],
+    removable,
+  };
+}
+
+function createFixedBeforeEachGroup() {
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: false };
+}
+
+function createExtraBeforeEachGroup() {
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: true };
+}
+
+function createTestElement(test) {
   const fragment = testBlockTemplate.content.cloneNode(true);
   const blockEl = fragment.querySelector('.test-block');
   blockEl.dataset.testId = test.id;
 
-  const nameInput = blockEl.querySelector('.test-name-input');
+  const titleInput = blockEl.querySelector('.test-title-input');
   const removeBtn = blockEl.querySelector('.btn-remove-test');
   const listEl = blockEl.querySelector('.test-steps-list');
+  const addActionBtn = blockEl.querySelector('.btn-add-action-block');
+  const addAssertionBtn = blockEl.querySelector('.btn-add-assertion-block');
 
-  nameInput.value = test.name;
-  nameInput.addEventListener('input', () => {
-    test.name = nameInput.value;
+  titleInput.value = test.title;
+  titleInput.addEventListener('input', () => {
+    test.title = titleInput.value;
     updateJsonPreview();
   });
 
-  removeBtn.addEventListener('click', () => removeTest(test.id));
-
-  testsById.set(test.id, { el: blockEl, nameInput, listEl });
-  return blockEl;
-}
-
-function addTest({ focus = false } = {}) {
-  const test = {
-    id: nextTestId(),
-    name: `Test#${scenario.tests.length + 1}`,
-    steps: [],
-  };
-  scenario.tests.push(test);
-
-  const blockEl = createTestBlockElement(test);
-  testsContainerEl.appendChild(blockEl);
-
-  updateJsonPreview();
-
-  if (focus) {
-    testsById.get(test.id).nameInput.focus();
+  if (test.removable) {
+    removeBtn.addEventListener('click', () => removeTest(test.id));
+  } else {
+    removeBtn.hidden = true;
   }
 
-  return test;
+  testsById.set(test.id, { el: blockEl, titleInput, listEl });
+
+  for (const group of test.steps) {
+    listEl.appendChild(createBlockElement(group));
+  }
+  renumberGroups(test.steps);
+
+  // A new Action always goes right before this test's first Assertion
+  // group (or at the end if it somehow has none yet) — keeps every action
+  // ahead of every assertion no matter how many of each exist.
+  addActionBtn.addEventListener('click', () => {
+    const group = createExtraActionGroup();
+    let insertAt = test.steps.findIndex((g) => g.kind === 'assertion');
+    if (insertAt === -1) insertAt = test.steps.length;
+    test.steps.splice(insertAt, 0, group);
+
+    const groupEl = createBlockElement(group);
+    const domRefAtIndex = listEl.children[insertAt];
+    if (domRefAtIndex) {
+      listEl.insertBefore(groupEl, domRefAtIndex);
+    } else {
+      listEl.appendChild(groupEl);
+    }
+
+    renumberGroups(test.steps);
+    updateJsonPreview();
+  });
+
+  // A new Assertion always appends at the very end.
+  addAssertionBtn.addEventListener('click', () => {
+    const group = createExtraAssertionGroup();
+    test.steps.push(group);
+    listEl.appendChild(createBlockElement(group));
+    renumberGroups(test.steps);
+    updateJsonPreview();
+  });
+
+  return blockEl;
 }
 
 function removeTest(testId) {
   const index = scenario.tests.findIndex((t) => t.id === testId);
   if (index === -1) return;
+  if (scenario.tests[index].removable === false) return;
 
   const [test] = scenario.tests.splice(index, 1);
-  for (const step of test.steps) {
-    rowsById.delete(step.id);
+  for (const group of test.steps) {
+    for (const item of group.actions) {
+      rowsById.delete(item.id);
+    }
+    blocksById.delete(group.id);
   }
 
   const refs = testsById.get(testId);
@@ -435,15 +692,120 @@ function removeTest(testId) {
     testsById.delete(testId);
   }
 
+  if (scenario.tests.length === 0) {
+    scenario.mode = null;
+    updateModeButtonsVisibility();
+  }
+
   updateJsonPreview();
 }
 
+// Renders the one shared "Before Each" section: a single labeled envelope
+// holding one-or-more plain Action blocks (the first fixed, any extra
+// ones removable), each an ordinary Action block — never itself labeled
+// "Before Each". Its own local "+ Action" button always appends a new
+// Action block at the end; there's no Assertion side since beforeEach
+// never holds assertions.
+function createBeforeEachContainerElement() {
+  const fragment = beforeEachContainerTemplate.content.cloneNode(true);
+  const containerEl = fragment.querySelector('.before-each-container');
+  const listEl = containerEl.querySelector('.before-each-list');
+  const addActionBtn = containerEl.querySelector('.btn-add-action-block');
+
+  beforeEachListEl = listEl;
+
+  for (const group of scenario.beforeEach) {
+    listEl.appendChild(createBlockElement(group));
+  }
+  renumberGroups(scenario.beforeEach);
+
+  addActionBtn.addEventListener('click', () => {
+    const group = createExtraBeforeEachGroup();
+    scenario.beforeEach.push(group);
+    listEl.appendChild(createBlockElement(group));
+    renumberGroups(scenario.beforeEach);
+    updateJsonPreview();
+  });
+
+  return containerEl;
+}
+
 /* ==========================================================================
-   RESET
+   MODE OPERATIONS ("+ Test" / "+ Tests" / "+ Add test")
    ========================================================================== */
 
-// Wipes scenario name/description, shared steps, and all test blocks back
-// to the same state the app starts in (one empty step, no tests, no name).
+function updateModeButtonsVisibility() {
+  modeTestsBtn.hidden = scenario.mode === 'tests';
+  growTestBtn.hidden = scenario.mode !== 'tests';
+}
+
+function addStandaloneTest({ focus = false } = {}) {
+  scenario.mode = 'test';
+  const test = createTestEntry({ removable: true });
+  scenario.tests.push(test);
+
+  const el = createTestElement(test);
+  sharedStepsListEl.appendChild(el);
+
+  updateModeButtonsVisibility();
+  updateJsonPreview();
+
+  if (focus) {
+    testsById.get(test.id).titleInput.focus();
+  }
+
+  return test;
+}
+
+function createTestsScaffold() {
+  scenario.mode = 'tests';
+
+  scenario.beforeEach = [createFixedBeforeEachGroup()];
+  sharedStepsListEl.appendChild(createBeforeEachContainerElement());
+
+  for (let i = 0; i < 2; i += 1) {
+    const test = createTestEntry({ removable: false });
+    scenario.tests.push(test);
+    sharedStepsListEl.appendChild(createTestElement(test));
+  }
+
+  updateModeButtonsVisibility();
+  updateJsonPreview();
+}
+
+function growTestsScaffold() {
+  const test = createTestEntry({ removable: true });
+  scenario.tests.push(test);
+  sharedStepsListEl.appendChild(createTestElement(test));
+  updateJsonPreview();
+}
+
+// Wipes the beforeEach/tests/mode back to the initial empty state, without
+// touching the scenario name/description. Used both by "Clear all" and
+// when confirming a Test <-> Tests mode switch.
+function resetDescribeOnly() {
+  scenario.beforeEach = null;
+  scenario.tests = [];
+  scenario.mode = null;
+  beforeEachListEl = null;
+  sharedStepsListEl.innerHTML = '';
+  rowsById.clear();
+  testsById.clear();
+  blocksById.clear();
+}
+
+let pendingModeSwitch = null;
+
+function requestModeSwitch(targetMode, message) {
+  pendingModeSwitch = targetMode;
+  modeSwitchMessageEl.textContent = message;
+  modeSwitchConfirmDialog.showModal();
+}
+
+/* ==========================================================================
+   RESET ("Clear all")
+   ========================================================================== */
+
 function clearAll() {
   scenario.scenarioName = '';
   scenarioNameInput.value = '';
@@ -451,88 +813,105 @@ function clearAll() {
   scenario.scenarioDescription = '';
   scenarioDescriptionInput.value = '';
 
-  scenario.sharedSteps = [];
-  sharedStepsListEl.innerHTML = '';
-
-  scenario.tests = [];
-  testsContainerEl.innerHTML = '';
-
-  rowsById.clear();
-  testsById.clear();
-
-  addStep(); // restore the single starting row, matching initial load
+  resetDescribeOnly();
+  updateModeButtonsVisibility();
   updateJsonPreview();
 }
 
 /* ==========================================================================
-   EXPORT FUNCTIONS
+   EXPORT (deliberately NOT strict JSON)
+   No `id`/`kind` anywhere — those are builder-only tracking fields.
+
+   This is hand-built text, not JSON.stringify(someObject) — a real JS
+   object can't hold the same key twice (the later one just silently wins
+   before stringify ever runs), and the wanted shape needs exactly that:
+   the "step" key repeated once per group (Action/Assertion block) inside
+   a test, and the "test" key repeated once per test at the describe
+   level, each occurrence carrying its own content. That's intentionally
+   not valid JSON — it reads flatter and more code-like for an agent to
+   scan, at the cost of not being machine-parseable via JSON.parse. There
+   is no "Download JSON" button as a result; only "Copy to clipboard".
+
+   Every leaf action/assertion carries its own `title` (copied from the
+   group it's in) — the group is what supplies that shared title.
    ========================================================================== */
 
-function exportStep(s) {
-  return {
-    id: s.id,
-    action: s.action,
-    target: s.target,
-    selection: s.selection,
-    value: s.value,
-  };
+// Safely renders one scalar value (string or null) as it should appear in
+// the output text — strings get JSON-correct quoting/escaping, null stays
+// the bare literal `null`.
+function serializeScalar(value) {
+  return value === null ? 'null' : JSON.stringify(value);
 }
 
-function buildExportObject() {
-  const base = {
-    scenarioName: scenario.scenarioName,
-    scenarioDescription: scenario.scenarioDescription,
+function buildExportText() {
+  const lines = [];
+  const emit = (level, text) => lines.push('  '.repeat(level) + text);
+
+  const emitLeaf = (leaf, level, isLast) => {
+    emit(level, '{');
+    emit(level + 1, `"action": ${serializeScalar(leaf.action)},`);
+    emit(level + 1, `"target": ${serializeScalar(leaf.target)},`);
+    emit(level + 1, `"selection": ${serializeScalar(leaf.selection)},`);
+    emit(level + 1, `"value": ${serializeScalar(leaf.value)}`);
+    emit(level, isLast ? '}' : '},');
   };
 
-  // sharedSteps/tests only make sense once there's an actual branch to
-  // represent (2+ test blocks). With 0 or 1 test blocks there's nothing to
-  // share between, so export a single flat `steps` list instead.
-  if (scenario.tests.length > 1) {
-    return {
-      ...base,
-      sharedSteps: scenario.sharedSteps.map(exportStep),
-      tests: scenario.tests.map((t) => ({
-        id: t.id,
-        name: t.name,
-        steps: t.steps.map(exportStep),
-      })),
-    };
+  // One "title" pairs with exactly one "step" array — the group as a
+  // whole, not each leaf action inside it. It's the first line inside the
+  // array itself, so it never sits as a sibling key next to the enclosing
+  // test's own "title" line.
+  const emitGroup = (group, level, isLast) => {
+    emit(level, '"step": [');
+    emit(level + 1, `"title": ${serializeScalar(group.title)},`);
+    group.actions.forEach((leaf, i) => {
+      emitLeaf(leaf, level + 1, i === group.actions.length - 1);
+    });
+    emit(level, isLast ? ']' : '],');
+  };
+
+  const emitTest = (test, level, isLast) => {
+    emit(level, '"test": {');
+    emit(level + 1, `"title": ${serializeScalar(test.title)},`);
+    test.steps.forEach((group, i) => {
+      emitGroup(group, level + 1, i === test.steps.length - 1);
+    });
+    emit(level, isLast ? '}' : '},');
+  };
+
+  emit(0, '{');
+  emit(1, `"scenarioName": ${serializeScalar(scenario.scenarioName)},`);
+  emit(1, `"scenarioDescription": ${serializeScalar(scenario.scenarioDescription)},`);
+  emit(1, '"describe": {');
+  emit(2, `"title": ${serializeScalar(scenario.scenarioName)},`);
+
+  if (scenario.beforeEach && scenario.beforeEach.length > 0) {
+    emit(2, '"beforeEach": {');
+    scenario.beforeEach.forEach((group, i) => {
+      emitGroup(group, 3, i === scenario.beforeEach.length - 1);
+    });
+    emit(2, '},');
+  } else {
+    emit(2, '"beforeEach": null,');
   }
 
-  const flatSteps = scenario.tests.length === 1
-    ? [...scenario.sharedSteps, ...scenario.tests[0].steps]
-    : scenario.sharedSteps;
+  if (scenario.tests.length === 0) {
+    emit(2, '"test": null');
+  } else {
+    scenario.tests.forEach((test, i) => {
+      emitTest(test, 2, i === scenario.tests.length - 1);
+    });
+  }
 
-  return {
-    ...base,
-    steps: flatSteps.map(exportStep),
-  };
-}
+  emit(1, '}');
+  emit(0, '}');
 
-function downloadJson() {
-  const json = JSON.stringify(buildExportObject(), null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-
-  const nameSlug = (scenario.scenarioName || 'test-scenario')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '') || 'test-scenario';
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${nameSlug}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return lines.join('\n');
 }
 
 async function copyJsonToClipboard() {
-  const json = JSON.stringify(buildExportObject(), null, 2);
+  const text = buildExportText();
   try {
-    await navigator.clipboard.writeText(json);
+    await navigator.clipboard.writeText(text);
     showCopyFeedback('Copied!');
   } catch (err) {
     showCopyFeedback('Copy failed');
@@ -562,10 +941,26 @@ scenarioDescriptionInput.addEventListener('input', () => {
   updateJsonPreview();
 });
 
-addStepBtn.addEventListener('click', () => addStep({ focus: true }));
-addTestBtn.addEventListener('click', () => addTest({ focus: true }));
+modeTestBtn.addEventListener('click', () => {
+  if (scenario.mode === 'tests') {
+    requestModeSwitch('test', 'Switching to Test will clear your current Tests setup. Continue?');
+    return;
+  }
+  addStandaloneTest({ focus: true });
+});
 
-downloadJsonBtn.addEventListener('click', downloadJson);
+modeTestsBtn.addEventListener('click', () => {
+  if (scenario.mode === 'test') {
+    requestModeSwitch('tests', 'Switching to Tests will clear your current Test setup. Continue?');
+    return;
+  }
+  if (scenario.mode === null) {
+    createTestsScaffold();
+  }
+});
+
+growTestBtn.addEventListener('click', () => growTestsScaffold());
+
 copyJsonBtn.addEventListener('click', copyJsonToClipboard);
 
 clearAllBtn.addEventListener('click', () => {
@@ -581,12 +976,30 @@ clearConfirmBtn.addEventListener('click', () => {
   clearConfirmDialog.close();
 });
 
+modeSwitchCancelBtn.addEventListener('click', () => {
+  pendingModeSwitch = null;
+  modeSwitchConfirmDialog.close();
+});
+
+modeSwitchConfirmBtn.addEventListener('click', () => {
+  const target = pendingModeSwitch;
+  pendingModeSwitch = null;
+  modeSwitchConfirmDialog.close();
+
+  resetDescribeOnly();
+  if (target === 'test') {
+    addStandaloneTest({ focus: true });
+  } else if (target === 'tests') {
+    createTestsScaffold();
+  }
+});
+
 /* ==========================================================================
    INIT
    ========================================================================== */
 
 function init() {
-  addStep(); // start with one empty step row, per the data model
+  updateModeButtonsVisibility();
   updateJsonPreview();
 }
 
