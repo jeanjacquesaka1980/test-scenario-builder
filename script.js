@@ -86,8 +86,8 @@ function getFieldConfig(action) {
    points, "+ Test" and "+ Tests", and each instantiates a FIXED scaffold
    that can be grown but never fully removed:
 
-   - "+ Test" (repeatable): adds one standalone Test — { action group,
-     assertion group }. Every click adds another one; each one IS
+   - "+ Test" (repeatable): adds one standalone Test — one Action group +
+     one Assertion group. Every click adds another one; each one IS
      removable (unlike the fixed pieces below), since standalone tests
      don't share anything with each other.
    - "+ Tests" (a one-time scaffold, not repeatable): adds a shared
@@ -95,39 +95,44 @@ function getFieldConfig(action) {
      Playwright's one-beforeEach-per-describe rule. The Before Each block
      and the first two tests can never be removed; growth from here on
      happens through "+ Add test" (more tests) and each test's own
-     "+ Assertion" (more assertion groups, always appended at the end).
+     "+ Action" / "+ Assertion" (more groups). A new Action always inserts
+     right before that test's first Assertion group; a new Assertion
+     always appends at the very end — so actions stay before assertions no
+     matter how many of each a test ends up with.
 
    "Test" mode and "Tests" mode can't coexist — picking one while the
    other exists clears it first (with confirmation).
 
    Shape:
-   - scenario.describe: array of entries, each either
-       { id, kind: 'beforeEach', title, actions: [...] }   (leaf rows directly)
-       { id, kind: 'test', title, steps: [...], removable }
-     A Test's `steps` is itself an array of groups:
-       { id, kind: 'action' | 'assertion', title, actions: [...], removable }
+   - scenario.beforeEach: null, or one group { title, actions: [...] } —
+     Action-only, always fixed (mode 'tests' only).
+   - scenario.tests: array of { title, steps: [...], removable }. A test's
+     `steps` is itself an array of groups:
+       { kind: 'action' | 'assertion', title, actions: [...], removable }
      `removable` gates both the remove button AND (for groups) whether a
      neighboring group can move into that slot — fixed pieces are also
      fixed in position.
    - Groups don't nest — a group's own list is always flat leaf rows.
 
+   `id`/`kind` fields exist ONLY on the in-memory objects, to let the
+   builder track and render things (DOM lookups, template selection,
+   restricting which actions a group accepts). They're dropped entirely on
+   export — an agent reading the JSON doesn't need synthetic tracking ids,
+   only content, order, and (for beforeEach vs. test) the `step` vs.
+   `steps` shape difference.
+
    Each leaf row/test/group has a live DOM element tracked in `rowsById` /
    `testsById` / `blocksById` so fields can be updated in place without
    re-rendering the whole list (which would blow away focus/cursor position
    while typing).
-
-   Leaf row ids are prefixed by which kind of group they live in —
-   `action-N` inside an Action (or Before Each), `assertion-N` inside an
-   Assertion — using one global counter per prefix (not reset per group),
-   so every id in the document stays a stable, unique reference regardless
-   of where its group gets moved later.
    ========================================================================== */
 
 const scenario = {
   scenarioName: '',
   scenarioDescription: '',
   mode: null, // null | 'test' | 'tests'
-  describe: [],
+  beforeEach: null,
+  tests: [],
 };
 
 let actionIdCounter = 0;
@@ -163,32 +168,33 @@ const testsById = new Map(); // test id -> { el, titleInput, listEl }
 const blocksById = new Map(); // group/beforeEach id -> { el, listEl, numberEl }
 
 // Locate which flat leaf list a step belongs to — a test's group's
-// `.actions`, or a beforeEach's `.actions` directly — along with its
+// `.actions`, or the beforeEach's `.actions` directly — along with its
 // index, the DOM list it renders into, and how to renumber it after a
 // change.
 function findStepContainer(stepId) {
-  for (const entry of scenario.describe) {
-    if (entry.kind === 'beforeEach') {
-      const index = entry.actions.findIndex((s) => s.id === stepId);
+  if (scenario.beforeEach) {
+    const index = scenario.beforeEach.actions.findIndex((s) => s.id === stepId);
+    if (index !== -1) {
+      const beforeEach = scenario.beforeEach;
+      return {
+        array: beforeEach.actions,
+        index,
+        listEl: blocksById.get(beforeEach.id).listEl,
+        renumber: () => renumberSteps(beforeEach.actions),
+      };
+    }
+  }
+
+  for (const test of scenario.tests) {
+    for (const group of test.steps) {
+      const index = group.actions.findIndex((s) => s.id === stepId);
       if (index !== -1) {
         return {
-          array: entry.actions,
+          array: group.actions,
           index,
-          listEl: blocksById.get(entry.id).listEl,
-          renumber: () => renumberSteps(entry.actions),
+          listEl: blocksById.get(group.id).listEl,
+          renumber: () => renumberSteps(group.actions),
         };
-      }
-    } else {
-      for (const group of entry.steps) {
-        const index = group.actions.findIndex((s) => s.id === stepId);
-        if (index !== -1) {
-          return {
-            array: group.actions,
-            index,
-            listEl: blocksById.get(group.id).listEl,
-            renumber: () => renumberSteps(group.actions),
-          };
-        }
       }
     }
   }
@@ -196,17 +202,17 @@ function findStepContainer(stepId) {
 }
 
 // Locate which test's `steps` array a given group belongs to (groups only
-// ever live inside a test — never at the describe root, never nested).
+// ever live inside a test — never nested, and the beforeEach isn't a
+// group of groups so it's never a match here).
 function findBlockContainer(blockId) {
-  for (const entry of scenario.describe) {
-    if (entry.kind !== 'test') continue;
-    const index = entry.steps.findIndex((g) => g.id === blockId);
+  for (const test of scenario.tests) {
+    const index = test.steps.findIndex((g) => g.id === blockId);
     if (index !== -1) {
       return {
-        array: entry.steps,
+        array: test.steps,
         index,
-        listEl: testsById.get(entry.id).listEl,
-        renumber: () => renumberGroups(entry.steps),
+        listEl: testsById.get(test.id).listEl,
+        renumber: () => renumberGroups(test.steps),
       };
     }
   }
@@ -261,7 +267,7 @@ function applyFieldVisibility(refs, action) {
   refs.valueInput.hidden = !config.value;
 }
 
-// Create a DOM row for one leaf action/assertion inside a group (or a
+// Create a DOM row for one leaf action/assertion inside a group (or the
 // beforeEach), wire up its listeners, and insert it. Does not touch
 // scenario state or append to a container — caller (addItemToBlock) does
 // that.
@@ -351,7 +357,7 @@ function createRowElement(step, context) {
 }
 
 // Re-labels the "N." prefix on every row inside one flat leaf list (a
-// group's or beforeEach's own items) to match its current order, and
+// group's or the beforeEach's own items) to match its current order, and
 // enables/disables that list's move-up / move-down buttons at its own
 // ends. Numbering restarts at 1 in each list, since each one reads as its
 // own sequence.
@@ -429,7 +435,7 @@ function moveStep(stepId, direction) {
 }
 
 // Adds a leaf row (an action or an assertion, depending on the group's
-// kind) to one specific group or beforeEach. Always targets that one,
+// kind) to one specific group or the beforeEach. Always targets that one,
 // regardless of anything else on the page.
 function addItemToBlock(block, { focus = false } = {}) {
   const actionsList = blockActionsList(block);
@@ -568,6 +574,10 @@ function createFixedAssertionGroup() {
   return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: false };
 }
 
+function createExtraActionGroup() {
+  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: true };
+}
+
 function createExtraAssertionGroup() {
   return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: true };
 }
@@ -575,7 +585,6 @@ function createExtraAssertionGroup() {
 function createTestEntry({ removable }) {
   return {
     id: nextTestId(),
-    kind: 'test',
     title: '',
     steps: [createFixedActionGroup(), createFixedAssertionGroup()],
     removable,
@@ -594,6 +603,7 @@ function createTestElement(test) {
   const titleInput = blockEl.querySelector('.test-title-input');
   const removeBtn = blockEl.querySelector('.btn-remove-test');
   const listEl = blockEl.querySelector('.test-steps-list');
+  const addActionBtn = blockEl.querySelector('.btn-add-action-block');
   const addAssertionBtn = blockEl.querySelector('.btn-add-assertion-block');
 
   titleInput.value = test.title;
@@ -615,6 +625,28 @@ function createTestElement(test) {
   }
   renumberGroups(test.steps);
 
+  // A new Action always goes right before this test's first Assertion
+  // group (or at the end if it somehow has none yet) — keeps every action
+  // ahead of every assertion no matter how many of each exist.
+  addActionBtn.addEventListener('click', () => {
+    const group = createExtraActionGroup();
+    let insertAt = test.steps.findIndex((g) => g.kind === 'assertion');
+    if (insertAt === -1) insertAt = test.steps.length;
+    test.steps.splice(insertAt, 0, group);
+
+    const groupEl = createBlockElement(group);
+    const domRefAtIndex = listEl.children[insertAt];
+    if (domRefAtIndex) {
+      listEl.insertBefore(groupEl, domRefAtIndex);
+    } else {
+      listEl.appendChild(groupEl);
+    }
+
+    renumberGroups(test.steps);
+    updateJsonPreview();
+  });
+
+  // A new Assertion always appends at the very end.
   addAssertionBtn.addEventListener('click', () => {
     const group = createExtraAssertionGroup();
     test.steps.push(group);
@@ -627,11 +659,11 @@ function createTestElement(test) {
 }
 
 function removeTest(testId) {
-  const index = scenario.describe.findIndex((e) => e.kind === 'test' && e.id === testId);
+  const index = scenario.tests.findIndex((t) => t.id === testId);
   if (index === -1) return;
-  if (scenario.describe[index].removable === false) return;
+  if (scenario.tests[index].removable === false) return;
 
-  const [test] = scenario.describe.splice(index, 1);
+  const [test] = scenario.tests.splice(index, 1);
   for (const group of test.steps) {
     for (const item of group.actions) {
       rowsById.delete(item.id);
@@ -645,7 +677,7 @@ function removeTest(testId) {
     testsById.delete(testId);
   }
 
-  if (scenario.describe.length === 0) {
+  if (scenario.tests.length === 0) {
     scenario.mode = null;
     updateModeButtonsVisibility();
   }
@@ -665,7 +697,7 @@ function updateModeButtonsVisibility() {
 function addStandaloneTest({ focus = false } = {}) {
   scenario.mode = 'test';
   const test = createTestEntry({ removable: true });
-  scenario.describe.push(test);
+  scenario.tests.push(test);
 
   const el = createTestElement(test);
   sharedStepsListEl.appendChild(el);
@@ -684,12 +716,12 @@ function createTestsScaffold() {
   scenario.mode = 'tests';
 
   const beforeEach = createBeforeEachEntry();
-  scenario.describe.push(beforeEach);
+  scenario.beforeEach = beforeEach;
   sharedStepsListEl.appendChild(createBlockElement(beforeEach));
 
   for (let i = 0; i < 2; i += 1) {
     const test = createTestEntry({ removable: false });
-    scenario.describe.push(test);
+    scenario.tests.push(test);
     sharedStepsListEl.appendChild(createTestElement(test));
   }
 
@@ -699,16 +731,17 @@ function createTestsScaffold() {
 
 function growTestsScaffold() {
   const test = createTestEntry({ removable: true });
-  scenario.describe.push(test);
+  scenario.tests.push(test);
   sharedStepsListEl.appendChild(createTestElement(test));
   updateJsonPreview();
 }
 
-// Wipes the describe list and mode back to the initial empty state,
-// without touching the scenario name/description. Used both by "Clear
-// all" and when confirming a Test <-> Tests mode switch.
+// Wipes the beforeEach/tests/mode back to the initial empty state, without
+// touching the scenario name/description. Used both by "Clear all" and
+// when confirming a Test <-> Tests mode switch.
 function resetDescribeOnly() {
-  scenario.describe = [];
+  scenario.beforeEach = null;
+  scenario.tests = [];
   scenario.mode = null;
   sharedStepsListEl.innerHTML = '';
   rowsById.clear();
@@ -742,11 +775,14 @@ function clearAll() {
 
 /* ==========================================================================
    EXPORT FUNCTIONS
+   No `id` or `kind` anywhere — those are builder-only tracking fields.
+   describe.beforeEach vs. a describe.tests[n] entry is told apart purely
+   by shape: a beforeEach/group has `step` (singular, leaf rows directly);
+   a test has `steps` (plural, an array of groups).
    ========================================================================== */
 
 function exportStep(s) {
   return {
-    id: s.id,
     action: s.action,
     target: s.target,
     selection: s.selection,
@@ -754,33 +790,22 @@ function exportStep(s) {
   };
 }
 
-// Exports one group (Action or Assertion, inside a test) as
-// { id, title, step: [...] } — one test.step() call. The group's kind
-// (which restricts what the builder let you put in it) is deliberately
-// dropped: it's a builder-only concern, and each leaf row already says
-// what it is via its own `action` field.
 function exportGroup(group) {
-  return { id: group.id, title: group.title, step: group.actions.map(exportStep) };
+  return { title: group.title, step: group.actions.map(exportStep) };
 }
 
-// Exports one describe-level entry. A beforeEach exports the same
-// { id, title, step } shape as a group (it effectively IS one — an
-// Action-only group in the shared-setup role). A test exports
-// { id, title, steps } — plural, since it holds an array of groups, not
-// leaf rows directly. That's the only signal an agent needs to tell the
-// two apart; no separate "kind" field is exported anywhere.
-function exportDescribeEntry(entry) {
-  if (entry.kind === 'beforeEach') {
-    return { id: entry.id, title: entry.title, step: entry.actions.map(exportStep) };
-  }
-  return { id: entry.id, title: entry.title, steps: entry.steps.map(exportGroup) };
+function exportTest(test) {
+  return { title: test.title, steps: test.steps.map(exportGroup) };
 }
 
 function buildExportObject() {
   return {
     scenarioName: scenario.scenarioName,
     scenarioDescription: scenario.scenarioDescription,
-    describe: scenario.describe.map(exportDescribeEntry),
+    describe: {
+      beforeEach: scenario.beforeEach ? exportGroup(scenario.beforeEach) : null,
+      tests: scenario.tests.map(exportTest),
+    },
   };
 }
 

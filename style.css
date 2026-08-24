@@ -255,11 +255,21 @@ label {
   margin-top: 4px;
 }
 
+.btn-add-action-block,
 .btn-add-assertion-block,
 .btn-add-test {
   flex: 1 1 160px;
   border-style: dashed;
   color: #444;
+}
+
+.btn-add-action-block {
+  color: #0f766e;
+  border-color: #7fd4c9;
+}
+
+.btn-add-action-block:hover {
+  background: #e6fbf7;
 }
 
 .btn-add-assertion-block {
@@ -333,18 +343,6 @@ label {
 
 .test-block .step-row {
   background: #fff;
-}
-
-.test-block > .btn-add-assertion-block {
-  width: 100%;
-  margin-top: 10px;
-  border-style: dashed;
-  color: #92400e;
-  border-color: #f2c88a;
-}
-
-.test-block > .btn-add-assertion-block:hover {
-  background: #fef3e2;
 }
 
 /* ==========================================================================

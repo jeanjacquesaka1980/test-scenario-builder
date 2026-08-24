@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -96,12 +96,15 @@
     </div>
   </template>
 
-  <!-- Test block template: a labeled envelope that owns exactly one fixed
-       Action group, one-or-more Assertion groups (the first fixed, any
-       extra ones grown via "+ Assertion" and removable), and its own
-       title. Its own remove (×) button is present in the markup but hidden
-       by JS for the fixed instances (a standalone test, or the first two
-       inside a Tests scaffold) since those can't be removed. -->
+  <!-- Test block template: a labeled envelope that owns one-or-more Action
+       groups followed by one-or-more Assertion groups (the first of each
+       fixed, any extra ones removable), and its own title. Its own remove
+       (×) button is present in the markup but hidden by JS for the fixed
+       instances (a standalone test, or the first two inside a Tests
+       scaffold) since those can't be removed. "+ Action" always inserts
+       right before the first Assertion group; "+ Assertion" always
+       appends at the very end — so actions stay before assertions no
+       matter how many of each exist. -->
   <template id="test-block-template">
     <div class="test-block" data-test-id="">
       <div class="test-block-header">
@@ -110,7 +113,10 @@
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
       <div class="test-steps-list steps-list"></div>
-      <button type="button" class="btn btn-add-assertion-block">+ Assertion</button>
+      <div class="list-controls">
+        <button type="button" class="btn btn-add-action-block">+ Action</button>
+        <button type="button" class="btn btn-add-assertion-block">+ Assertion</button>
+      </div>
     </div>
   </template>
 
@@ -158,6 +164,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=14"></script>
+  <script src="script.js?v=16"></script>
 </body>
 </html>
