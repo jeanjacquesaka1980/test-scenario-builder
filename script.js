@@ -83,23 +83,32 @@ function getFieldConfig(action) {
 
    This tool only builds Act + Assert — Arrange (setup) is left entirely to
    whatever agent reads the exported JSON. There are exactly two entry
-   points, "+ Test" and "+ Tests", and each instantiates a FIXED scaffold
-   that can be grown but never fully removed:
+   points, "+ Test" and "+ Tests", and each instantiates a scaffold that
+   can be grown, and mostly can't be stripped below its starting shape —
+   except a test's Action side and Tests' shared Before Each, which are
+   fully optional (some tests act via a fixture and go straight to the
+   assertion; some describes don't need a shared beforeEach at all):
 
    - "+ Test" (repeatable): adds one standalone Test — one Action group +
-     one Assertion group. Every click adds another one; each one IS
+     one Assertion group. Every click adds another one; each test IS
      removable (unlike the fixed pieces below), since standalone tests
-     don't share anything with each other.
+     don't share anything with each other. Its Action group is removable
+     too — a test can be trimmed down to just its Assertion group — but
+     the Assertion group itself stays fixed: Assert is the one thing every
+     test keeps.
    - "+ Tests" (a one-time scaffold, not repeatable): adds a shared
-     "Before Each" section (one fixed Action-only group) plus two Test
+     "Before Each" section (one Action-only group to start) plus two Test
      entries — mirrors Playwright's one-beforeEach-per-describe rule. The
-     first Before Each group and the first two tests can never be removed;
-     growth from here on happens through "+ Add test" (more tests), the
-     Before Each section's own "+ Action" (more Before Each groups), and
-     each test's own "+ Action" / "+ Assertion" (more groups). A new
-     Action always inserts right before that test's first Assertion group;
-     a new Assertion always appends at the very end — so actions stay
-     before assertions no matter how many of each a test ends up with.
+     two tests can never be removed, and each keeps the same
+     removable-Action/fixed-Assertion rule as a standalone test. The
+     Before Each section as a WHOLE is removable — its header carries its
+     own remove button — since not every describe needs one; growth from
+     here on happens through "+ Add test" (more tests), Before Each's own
+     "+ Action" (more Before Each groups, while it still exists), and each
+     test's own "+ Action" / "+ Assertion" (more groups). A new Action
+     always inserts right before that test's first Assertion group; a new
+     Assertion always appends at the very end — so actions stay before
+     assertions no matter how many of each a test ends up with.
 
    "Test" mode and "Tests" mode can't coexist — picking one while the
    other exists clears it first (with confirmation).
@@ -585,10 +594,6 @@ function moveBlock(blockId, direction) {
    TEST OPERATIONS
    ========================================================================== */
 
-function createFixedActionGroup() {
-  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: false };
-}
-
 function createFixedAssertionGroup() {
   return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: false };
 }
@@ -601,11 +606,14 @@ function createExtraAssertionGroup() {
   return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: true };
 }
 
+// A test's starting Action group is removable — some tests go straight to
+// the assertion (setup handled by a fixture, nothing to act on). Its
+// Assertion group stays fixed: Assert is the one thing every test keeps.
 function createTestEntry({ removable }) {
   return {
     id: nextTestId(),
     title: '',
-    steps: [createFixedActionGroup(), createFixedAssertionGroup()],
+    steps: [createExtraActionGroup(), createFixedAssertionGroup()],
     removable,
   };
 }
@@ -719,6 +727,7 @@ function createBeforeEachContainerElement() {
   const containerEl = fragment.querySelector('.before-each-container');
   const listEl = containerEl.querySelector('.before-each-list');
   const addActionBtn = containerEl.querySelector('.btn-add-action-block');
+  const removeBtn = containerEl.querySelector('.btn-remove-before-each');
 
   beforeEachListEl = listEl;
 
@@ -735,7 +744,30 @@ function createBeforeEachContainerElement() {
     updateJsonPreview();
   });
 
+  removeBtn.addEventListener('click', removeBeforeEach);
+
   return containerEl;
+}
+
+// Deletes the entire Before Each section — not every Tests scaffold needs
+// one, so unlike the tests themselves it can be dropped in one go rather
+// than group by group.
+function removeBeforeEach() {
+  if (!scenario.beforeEach) return;
+
+  for (const group of scenario.beforeEach) {
+    for (const item of group.actions) {
+      rowsById.delete(item.id);
+    }
+    blocksById.delete(group.id);
+  }
+
+  const containerEl = document.querySelector('.before-each-container');
+  if (containerEl) containerEl.remove();
+
+  scenario.beforeEach = null;
+  beforeEachListEl = null;
+  updateJsonPreview();
 }
 
 /* ==========================================================================

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 
@@ -25,10 +25,13 @@
     </section>
 
     <!-- Enforces Act + Assert only (Arrange is left to the agent that reads
-         this JSON). "+ Test" and "+ Tests" are the only entry points — each
-         instantiates a fixed scaffold (Action + Assertion, or a shared
-         beforeEach + two tests) that can't be removed, only grown. The
-         first thing either scaffold creates is the fixed "Login and
+         this JSON). "+ Test" and "+ Tests" are the only entry points —
+         each instantiates a scaffold (Action + Assertion, or a shared
+         beforeEach + two tests). A test's own Action side and the shared
+         Before Each section are both fully removable (some tests act via
+         a fixture and go straight to the assertion; some describes don't
+         need a shared beforeEach at all) — everything else can only grow.
+         The first thing either scaffold creates is the fixed "Login and
          Navigation" block (see login-nav-template) — it's metadata for
          the agent, not part of the describe/test code, so it lives
          outside "describe" in the export. -->
@@ -132,11 +135,14 @@
        fixed, any extra ones removable) — not multiple "Before Each"
        blocks. Its own "+ Action" always appends a new Action block at the
        end; there's no Assertion side since beforeEach never holds
-       assertions. -->
+       assertions. The whole section is optional — not every Tests
+       scaffold needs one — so its header carries its own remove button
+       that deletes the entire section in one go. -->
   <template id="before-each-container-template">
     <div class="before-each-container">
       <div class="before-each-header">
         <span class="before-each-badge">Before Each</span>
+        <button type="button" class="btn btn-icon btn-remove-before-each" title="Remove Before Each">&times;</button>
       </div>
       <div class="before-each-list steps-list"></div>
       <div class="list-controls">
@@ -145,15 +151,17 @@
     </div>
   </template>
 
-  <!-- Test block template: a labeled envelope that owns one-or-more Action
-       groups followed by one-or-more Assertion groups (the first of each
-       fixed, any extra ones removable), and its own title. Its own remove
-       (×) button is present in the markup but hidden by JS for the fixed
-       instances (a standalone test, or the first two inside a Tests
-       scaffold) since those can't be removed. "+ Action" always inserts
-       right before the first Assertion group; "+ Assertion" always
-       appends at the very end — so actions stay before assertions no
-       matter how many of each exist. -->
+  <!-- Test block template: a labeled envelope that owns zero-or-more
+       Action groups followed by one-or-more Assertion groups (the
+       starting Action group is removable — some tests act via a fixture
+       and go straight to the assertion — but the starting Assertion
+       group is fixed: Assert is the one thing every test keeps), and its
+       own title. Its own remove (×) button is present in the markup but
+       hidden by JS for the fixed test instances (the first two inside a
+       Tests scaffold, since those can't be removed). "+ Action" always
+       inserts right before the first Assertion group; "+ Assertion"
+       always appends at the very end — so actions stay before assertions
+       no matter how many of each exist. -->
   <template id="test-block-template">
     <div class="test-block" data-test-id="">
       <div class="test-block-header">
@@ -213,6 +221,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=27"></script>
+  <script src="script.js?v=28"></script>
 </body>
 </html>

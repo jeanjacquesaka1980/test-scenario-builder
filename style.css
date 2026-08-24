@@ -358,6 +358,7 @@ label {
 .before-each-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
 .before-each-badge {
@@ -582,6 +583,15 @@ label {
 }
 
 .btn-remove-block:hover {
+  background: #fbeceb;
+}
+
+.btn-remove-before-each {
+  color: #b3261e;
+  border-color: #e3b3b0;
+}
+
+.btn-remove-before-each:hover {
   background: #fbeceb;
 }
 
