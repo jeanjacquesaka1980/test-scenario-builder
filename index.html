@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -77,7 +77,9 @@
     </div>
   </dialog>
 
-  <!-- Row template, cloned by JS for each leaf action/assertion -->
+  <!-- Row template, cloned by JS for each leaf action/assertion. Carries
+       its own small "note" toggle, same as a block/test, so a note can be
+       pinned to one specific step rather than the group as a whole. -->
   <template id="step-row-template">
     <div class="step-row" data-step-id="">
       <div class="step-row-main">
@@ -95,11 +97,13 @@
         <input type="text" class="field field-value" data-field="value" placeholder="value">
 
         <div class="step-row-controls">
+          <button type="button" class="btn-note-toggle" title="Add a note">note</button>
           <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
           <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
           <button type="button" class="btn btn-icon btn-remove" title="Remove step">&times;</button>
         </div>
       </div>
+      <textarea class="step-note-input" rows="2" placeholder="Note for the agent" hidden></textarea>
     </div>
   </template>
 
@@ -230,6 +234,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=29"></script>
+  <script src="script.js?v=30"></script>
 </body>
 </html>

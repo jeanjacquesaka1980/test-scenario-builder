@@ -336,6 +336,8 @@ function createRowElement(step, context) {
 
   applyFieldVisibility(refs, step.action);
 
+  wireNoteToggle(rowEl, step, '.btn-note-toggle', '.step-note-input');
+
   // --- field change handlers: update the data model directly, no re-render ---
   actionSelect.addEventListener('change', () => {
     step.action = actionSelect.value;
@@ -482,6 +484,7 @@ function addItemToBlock(block, { focus = false } = {}) {
     target: '',
     selection: config.selection ? 'single' : null,
     value: '',
+    note: '',
   };
   items.push(step);
 
@@ -966,7 +969,8 @@ function buildExportText() {
     emit(level + 1, `"action": ${serializeScalar(leaf.action)},`);
     emit(level + 1, `"target": ${serializeScalar(leaf.target)},`);
     emit(level + 1, `"selection": ${serializeScalar(leaf.selection)},`);
-    emit(level + 1, `"value": ${serializeScalar(leaf.value)}`);
+    emit(level + 1, `"value": ${serializeScalar(leaf.value)},`);
+    emit(level + 1, `"note": ${serializeScalar(leaf.note)}`);
     emit(level, isLast ? '}' : '},');
   };
 

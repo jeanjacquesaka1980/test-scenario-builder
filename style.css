@@ -566,7 +566,8 @@ label {
 }
 
 .block-note-input,
-.test-note-input {
+.test-note-input,
+.step-note-input {
   width: 100%;
   padding: 6px 9px;
   border: 1px solid #cfd3d9;
@@ -577,6 +578,11 @@ label {
   background: #fffde8;
   resize: vertical;
   margin-bottom: 10px;
+}
+
+.step-note-input {
+  margin-top: 8px;
+  margin-bottom: 0;
 }
 
 .block .steps-list:not(:empty) {
