@@ -509,6 +509,28 @@ function addItemToBlock(block, { focus = false } = {}) {
    group is also fixed in position.
    ========================================================================== */
 
+// A small text-link toggle (not a boxed button, since most blocks won't
+// need one) that shows/hides a note textarea next to a block's or test's
+// title. The note travels with whichever block/test it was added to —
+// it's just another field on that one object, same as `title`.
+function wireNoteToggle(scopeEl, data, toggleSelector, textareaSelector) {
+  const toggleBtn = scopeEl.querySelector(toggleSelector);
+  const textarea = scopeEl.querySelector(textareaSelector);
+
+  textarea.value = data.note;
+  textarea.hidden = !data.note;
+
+  toggleBtn.addEventListener('click', () => {
+    textarea.hidden = !textarea.hidden;
+    if (!textarea.hidden) textarea.focus();
+  });
+
+  textarea.addEventListener('input', () => {
+    data.note = textarea.value;
+    updateJsonPreview();
+  });
+}
+
 function createBlockElement(block) {
   const template = block.kind === 'assertion' ? assertionBlockTemplate : actionBlockTemplate;
   const fragment = template.content.cloneNode(true);
@@ -528,6 +550,8 @@ function createBlockElement(block) {
     block.title = titleInput.value;
     updateJsonPreview();
   });
+
+  wireNoteToggle(blockEl, block, '.btn-note-toggle', '.block-note-input');
 
   addItemBtn.addEventListener('click', () => addItemToBlock(block, { focus: true }));
 
@@ -595,15 +619,15 @@ function moveBlock(blockId, direction) {
    ========================================================================== */
 
 function createFixedAssertionGroup() {
-  return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: false };
+  return { id: nextBlockId(), kind: 'assertion', title: '', note: '', actions: [], removable: false };
 }
 
 function createExtraActionGroup() {
-  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: true };
+  return { id: nextBlockId(), kind: 'action', title: '', note: '', actions: [], removable: true };
 }
 
 function createExtraAssertionGroup() {
-  return { id: nextBlockId(), kind: 'assertion', title: '', actions: [], removable: true };
+  return { id: nextBlockId(), kind: 'assertion', title: '', note: '', actions: [], removable: true };
 }
 
 // A test's starting Action group is removable — some tests go straight to
@@ -613,17 +637,18 @@ function createTestEntry({ removable }) {
   return {
     id: nextTestId(),
     title: '',
+    note: '',
     steps: [createExtraActionGroup(), createFixedAssertionGroup()],
     removable,
   };
 }
 
 function createFixedBeforeEachGroup() {
-  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: false };
+  return { id: nextBlockId(), kind: 'action', title: '', note: '', actions: [], removable: false };
 }
 
 function createExtraBeforeEachGroup() {
-  return { id: nextBlockId(), kind: 'action', title: '', actions: [], removable: true };
+  return { id: nextBlockId(), kind: 'action', title: '', note: '', actions: [], removable: true };
 }
 
 function createTestElement(test) {
@@ -642,6 +667,8 @@ function createTestElement(test) {
     test.title = titleInput.value;
     updateJsonPreview();
   });
+
+  wireNoteToggle(blockEl, test, '.btn-note-toggle', '.test-note-input');
 
   if (test.removable) {
     removeBtn.addEventListener('click', () => removeTest(test.id));
@@ -943,13 +970,14 @@ function buildExportText() {
     emit(level, isLast ? '}' : '},');
   };
 
-  // One "title" pairs with exactly one "step" array — the group as a
-  // whole, not each leaf action inside it. It's the first line inside the
-  // array itself, so it never sits as a sibling key next to the enclosing
-  // test's own "title" line.
+  // One "title" (and one optional "note") pairs with exactly one "step"
+  // array — the group as a whole, not each leaf action inside it. Both
+  // are the first lines inside the array itself, so they never sit as
+  // sibling keys next to the enclosing test's own "title"/"note".
   const emitGroup = (group, level, isLast) => {
     emit(level, '"step": [');
     emit(level + 1, `"title": ${serializeScalar(group.title)},`);
+    emit(level + 1, `"note": ${serializeScalar(group.note)},`);
     group.actions.forEach((leaf, i) => {
       emitLeaf(leaf, level + 1, i === group.actions.length - 1);
     });
@@ -959,6 +987,7 @@ function buildExportText() {
   const emitTest = (test, level, isLast) => {
     emit(level, '"test": {');
     emit(level + 1, `"title": ${serializeScalar(test.title)},`);
+    emit(level + 1, `"note": ${serializeScalar(test.note)},`);
     test.steps.forEach((group, i) => {
       emitGroup(group, level + 1, i === test.steps.length - 1);
     });

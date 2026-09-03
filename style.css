@@ -546,6 +546,39 @@ label {
   gap: 4px;
 }
 
+/* Small text-link toggle for the optional note on a block/test — never a
+   boxed button, since most blocks won't have one. */
+.btn-note-toggle {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  color: #888;
+  cursor: pointer;
+}
+
+.btn-note-toggle:hover {
+  color: #1a5fb4;
+}
+
+.block-note-input,
+.test-note-input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid #cfd3d9;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+  color: #1a1d21;
+  background: #fffde8;
+  resize: vertical;
+  margin-bottom: 10px;
+}
+
 .block .steps-list:not(:empty) {
   margin-bottom: 10px;
 }

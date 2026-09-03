@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -167,8 +167,10 @@
       <div class="test-block-header">
         <span class="test-block-badge">Test</span>
         <input type="text" class="test-title-input" data-field="test-title" placeholder="Title (optional)">
+        <button type="button" class="btn-note-toggle" title="Add a note">note</button>
         <button type="button" class="btn btn-icon btn-remove-test" title="Remove test">&times;</button>
       </div>
+      <textarea class="test-note-input" rows="2" placeholder="Note for the agent" hidden></textarea>
       <div class="test-steps-list steps-list"></div>
       <div class="list-controls">
         <button type="button" class="btn btn-add-action-block">+ Action</button>
@@ -182,19 +184,24 @@
        as the assertion block template below — themed differently via the
        .action-block modifier class — so both are built by one JS function.
        Also reused as-is for each Action block inside the shared Before
-       Each section (see before-each-container-template above). -->
+       Each section (see before-each-container-template above). The small
+       "note" toggle reveals an optional note textarea below the header —
+       deliberately a plain text link, not a boxed button, since most
+       blocks won't need one. -->
   <template id="action-block-template">
     <div class="block action-block" data-block-id="">
       <div class="block-header">
         <span class="block-badge">Action</span>
         <span class="block-number"></span>
         <input type="text" class="block-title-input" data-field="block-title" placeholder="Title (optional)">
+        <button type="button" class="btn-note-toggle" title="Add a note">note</button>
         <div class="block-controls">
           <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
           <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
           <button type="button" class="btn btn-icon btn-remove-block" title="Remove action">&times;</button>
         </div>
       </div>
+      <textarea class="block-note-input" rows="2" placeholder="Note for the agent" hidden></textarea>
       <div class="block-steps-list steps-list"></div>
       <button type="button" class="btn btn-add-item">+ Add action</button>
     </div>
@@ -208,12 +215,14 @@
         <span class="block-badge">Assertion</span>
         <span class="block-number"></span>
         <input type="text" class="block-title-input" data-field="block-title" placeholder="Title (optional)">
+        <button type="button" class="btn-note-toggle" title="Add a note">note</button>
         <div class="block-controls">
           <button type="button" class="btn btn-icon btn-move-up" title="Move up">&uarr;</button>
           <button type="button" class="btn btn-icon btn-move-down" title="Move down">&darr;</button>
           <button type="button" class="btn btn-icon btn-remove-block" title="Remove assertion">&times;</button>
         </div>
       </div>
+      <textarea class="block-note-input" rows="2" placeholder="Note for the agent" hidden></textarea>
       <div class="block-steps-list steps-list"></div>
       <button type="button" class="btn btn-add-item">+ Add assertion</button>
     </div>
@@ -221,6 +230,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=28"></script>
+  <script src="script.js?v=29"></script>
 </body>
 </html>
