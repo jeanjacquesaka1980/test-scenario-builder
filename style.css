@@ -736,6 +736,13 @@ label {
   padding: 3px 7px;
 }
 
+/* The Data block's badge is a literal file-name suffix (data.ts), not a
+   generic label like File's — keep it lowercase, not uppercased. */
+.cb-data-block .cb-block-badge {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .cb-block-header .btn-remove-block {
   margin-left: auto;
 }
