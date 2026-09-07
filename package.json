@@ -1,0 +1,15 @@
+{
+  "name": "test-code-builder-generator",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CLI generator that turns Test Code Builder YAML output into real project files. Runs inside the target project, not in the browser.",
+  "bin": {
+    "test-code-generate": "generator/generate.js"
+  },
+  "scripts": {
+    "generate": "node generator/generate.js"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}

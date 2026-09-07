@@ -775,18 +775,6 @@ label {
   resize: vertical;
 }
 
-.cb-block-output-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.cb-block-error {
-  color: #b3261e;
-  font-size: 12px;
-  font-weight: 600;
-}
-
 /* ==========================================================================
    Narrow-width responsive stacking
    ========================================================================== */

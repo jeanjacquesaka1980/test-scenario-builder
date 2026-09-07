@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -66,11 +66,13 @@
 
   </main>
 
-  <!-- Test Code Builder: a second, fully decoupled tool. Own YAML-shaped
-       data model (blocks: file | describe | ...), own deterministic
-       TypeScript generator, no AI in this path. v1 build order — file
-       blocks only so far; describe/use/beforeEach/tests come in later
-       steps, one at a time. -->
+  <!-- Test Code Builder: a second, fully decoupled tool. Pure authoring
+       UI — it assembles blocks and exports a .yaml file, nothing more. It
+       has no filesystem access and does not generate TypeScript; that
+       happens in a separate Node CLI (generator/generate.js) run inside
+       the target project, which reads this YAML, validates paths, and
+       writes real files. v1 build order — file blocks only so far;
+       describe/use/beforeEach/tests come in later steps, one at a time. -->
   <main class="app-main" id="tab-panel-code" hidden>
 
     <section class="cb-blocks-section">
@@ -84,6 +86,7 @@
       <h2>Export</h2>
       <div class="export-buttons">
         <button type="button" id="cb-copy-btn" class="btn">Copy to clipboard</button>
+        <button type="button" id="cb-download-btn" class="btn">Download YAML</button>
         <span id="cb-copy-feedback" class="copy-feedback" aria-live="polite"></span>
       </div>
       <pre id="cb-preview" class="json-preview"></pre>
@@ -92,8 +95,10 @@
   </main>
 
   <!-- File block: `name` + `path` locate the output file; `content`, if
-       given, is written verbatim — otherwise the naming-convention rule
-       derives `export const <name> = {};` from the file name. -->
+       given, is written verbatim — otherwise the target project's
+       generator derives `export const <name> = {};` from the file name
+       (naming-convention rule lives in generator/generate.js, not here —
+       this tab only captures the raw fields). -->
   <template id="cb-file-block-template">
     <div class="cb-block cb-file-block" data-cb-block-id="">
       <div class="cb-block-header">
@@ -114,10 +119,6 @@
         Content (optional — leave empty to derive an export from the name)
         <textarea class="cb-file-content" rows="3" placeholder="Leave empty to auto-derive export const ... = {};"></textarea>
       </label>
-      <div class="cb-block-output-row">
-        <button type="button" class="btn cb-download-btn">Download this file</button>
-        <span class="cb-block-error" hidden></span>
-      </div>
     </div>
   </template>
 
@@ -300,6 +301,6 @@
        browsers don't keep serving a stale cached copy during development. -->
   <script src="script.js?v=30"></script>
   <script src="tabs.js?v=1"></script>
-  <script src="code-builder.js?v=1"></script>
+  <script src="code-builder.js?v=2"></script>
 </body>
 </html>

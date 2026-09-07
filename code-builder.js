@@ -1,10 +1,19 @@
 // Test Code Builder — fully decoupled from the Test Scenario Builder
-// (script.js). Own data model, own generator, no shared state, no AI in
-// this generation path: YAML-shaped blocks in, deterministic TypeScript
-// out. Wrapped in an IIFE so nothing here can collide with script.js.
+// (script.js). Own data model, no shared state. Wrapped in an IIFE so
+// nothing here can collide with script.js.
 //
-// v1 build order (see the prompt this was built from) — build and verify
-// one numbered feature at a time:
+// Architecture (corrected from the original v1 draft, which wrongly
+// generated TypeScript in-browser):
+//   - This file (the Builder) is pure authoring UI. It only assembles
+//     blocks and exports a .yaml file (copy or download). It has no
+//     filesystem access and does NOT generate TypeScript.
+//   - A separate Node CLI (generator/generate.js) is the actual
+//     Generator: it runs inside the target project, reads that YAML file,
+//     validates paths, and writes real files with `fs`. It does not run
+//     in the browser. See that file for the naming-convention rule,
+//     path-safety checks, etc. — none of that logic belongs here.
+//
+// v1 build order — build and verify one numbered feature at a time:
 //   1. `file` block only                              <- this is where we are
 //   2. `describe` block, empty body
 //   3. `use` boolean toggle
@@ -28,61 +37,15 @@
     return { id: cbNextBlockId(), type: 'file', name: '', path: '', content: '' };
   }
 
-  const cbBlocksById = new Map(); // block id -> { el, errorEl }
+  const cbBlocksById = new Map(); // block id -> { el }
 
   const cbBlocksListEl = document.getElementById('cb-blocks-list');
   const cbAddFileBtn = document.getElementById('cb-add-file-btn');
   const cbFileBlockTemplate = document.getElementById('cb-file-block-template');
   const cbPreviewEl = document.getElementById('cb-preview');
   const cbCopyBtn = document.getElementById('cb-copy-btn');
+  const cbDownloadBtn = document.getElementById('cb-download-btn');
   const cbCopyFeedbackEl = document.getElementById('cb-copy-feedback');
-
-  /* ==========================================================================
-     NAMING CONVENTION (file blocks with no content)
-     "no-data-shown.data.ts" -> base "no-data-shown", suffix "data" ->
-     "export const noDataShownData = {};". Fixed rule, not configurable.
-     A file name that doesn't have exactly <base>.<suffix>.ts is a hard
-     error, not a silent fallback.
-     ========================================================================== */
-
-  function kebabToCamel(str) {
-    return str
-      .split('-')
-      .filter((word) => word !== '')
-      .map((word, i) => (i === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()))
-      .join('');
-  }
-
-  function deriveConstName(fileName) {
-    const parts = fileName.split('.');
-    if (parts.length !== 3 || parts[2] !== 'ts') {
-      throw new Error(
-        `"${fileName}" must look like <base>.<suffix>.ts to derive an export name (got ${parts.length} dot-separated part${parts.length === 1 ? '' : 's'})`
-      );
-    }
-    const [base, suffix] = parts;
-    if (base === '' || suffix === '') {
-      throw new Error(`"${fileName}" is missing its base name or suffix`);
-    }
-    const capitalizedSuffix = suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase();
-    return `${kebabToCamel(base)}${capitalizedSuffix}`;
-  }
-
-  // Throws on an invalid file name (see deriveConstName) — callers decide
-  // how to surface that (inline error vs. alert).
-  function generateFileBlockOutput(block) {
-    const content = block.content.trim();
-    if (content !== '') {
-      return content.endsWith('\n') ? content : `${content}\n`;
-    }
-    const constName = deriveConstName(block.name);
-    return `export const ${constName} = {};\n`;
-  }
-
-  function joinPath(path, name) {
-    const trimmedPath = path.trim().replace(/\/+$/, '');
-    return trimmedPath ? `${trimmedPath}/${name}` : name;
-  }
 
   /* ==========================================================================
      RENDERING
@@ -97,8 +60,6 @@
     const pathInput = blockEl.querySelector('.cb-file-path');
     const contentInput = blockEl.querySelector('.cb-file-content');
     const removeBtn = blockEl.querySelector('.btn-remove-block');
-    const downloadBtn = blockEl.querySelector('.cb-download-btn');
-    const errorEl = blockEl.querySelector('.cb-block-error');
 
     nameInput.value = block.name;
     pathInput.value = block.path;
@@ -118,9 +79,8 @@
     });
 
     removeBtn.addEventListener('click', () => removeBlock(block.id));
-    downloadBtn.addEventListener('click', () => downloadFileBlock(block));
 
-    cbBlocksById.set(block.id, { el: blockEl, errorEl });
+    cbBlocksById.set(block.id, { el: blockEl });
     return blockEl;
   }
 
@@ -146,58 +106,70 @@
   }
 
   /* ==========================================================================
-     PREVIEW
-     One section per block ("Output: a file per block"), each headed by
-     its resolved path so it's clear which file it represents. A block
-     with an invalid file name shows its error inline (in the block's own
-     card) and in the preview, instead of guessing.
+     YAML SERIALIZATION
+     Hand-written rather than a library, since the shape is small and
+     fully under our control — but it still has to produce YAML a real
+     parser (js-yaml, in the generator) can read back correctly, so plain
+     scalars are quoted whenever they're not obviously YAML-safe bare.
      ========================================================================== */
 
+  function isYamlSafeBare(str) {
+    if (str === '') return false;
+    if (/^\s|\s$/.test(str)) return false;
+    if (/^[-?:,[\]{}#&*!|>'"%@`]/.test(str)) return false;
+    if (/: |:$/.test(str)) return false;
+    if (/^(null|Null|NULL|~|true|True|TRUE|false|False|FALSE)$/.test(str)) return false;
+    if (/^[+-]?(\.\d|\d)/.test(str) && !Number.isNaN(Number(str))) return false;
+    return true;
+  }
+
+  // Renders one scalar value as a single-line YAML flow scalar (used for
+  // simple fields like name/path — never for multi-line content, which
+  // uses a block literal instead, see emitFileBlock).
+  function yamlScalar(value) {
+    if (value === null || value === undefined) return 'null';
+    const str = String(value);
+    if (isYamlSafeBare(str)) return str;
+    return JSON.stringify(str); // a JSON string literal is also valid YAML
+  }
+
+  function yamlBlockLiteral(text, indent) {
+    const lines = text.split('\n').map((line) => `${indent}  ${line}`);
+    return [`${indent}content: |`, ...lines].join('\n');
+  }
+
+  function serializeBlocksToYaml(blocks) {
+    if (blocks.length === 0) return 'blocks: []\n';
+
+    const lines = ['blocks:'];
+    for (const block of blocks) {
+      lines.push(`  - type: file`);
+      lines.push(`    name: ${yamlScalar(block.name)}`);
+      lines.push(`    path: ${yamlScalar(block.path)}`);
+      if (block.content.trim() !== '') {
+        lines.push(yamlBlockLiteral(block.content, '    '));
+      } else {
+        lines.push('    content: null');
+      }
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
   function renderPreview() {
-    const sections = cbState.blocks.map((block) => {
-      const fullPath = joinPath(block.path, block.name) || '(unnamed file)';
-      const header = `// ---- ${fullPath} ----`;
-      const refs = cbBlocksById.get(block.id);
-
-      let body;
-      let errorMessage = null;
-      try {
-        body = generateFileBlockOutput(block);
-      } catch (err) {
-        errorMessage = err.message;
-      }
-
-      if (refs) {
-        refs.errorEl.hidden = !errorMessage;
-        refs.errorEl.textContent = errorMessage || '';
-      }
-
-      return errorMessage ? `${header}\n// ERROR: ${errorMessage}` : `${header}\n${body}`;
-    });
-
-    cbPreviewEl.textContent = sections.join('\n');
+    cbPreviewEl.textContent = serializeBlocksToYaml(cbState.blocks);
   }
 
   /* ==========================================================================
-     EXPORT (copy to clipboard, and a per-file download since — unlike the
-     Test Scenario Builder's pseudo-JSON — this output is real, parseable
-     TypeScript with a real file name to save it under)
+     EXPORT — copy or download the YAML itself. This tool never writes
+     project files; that's the separate Node generator's job.
      ========================================================================== */
 
-  function downloadFileBlock(block) {
-    let body;
-    try {
-      body = generateFileBlockOutput(block);
-    } catch (err) {
-      window.alert(err.message);
-      return;
-    }
-
-    const blob = new Blob([body], { type: 'text/typescript' });
+  function downloadYaml() {
+    const blob = new Blob([cbPreviewEl.textContent], { type: 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = block.name || 'file.ts';
+    a.download = 'test-code-builder.yaml';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -213,7 +185,7 @@
     }, 1800);
   }
 
-  async function copyPreviewToClipboard() {
+  async function copyYamlToClipboard() {
     try {
       await navigator.clipboard.writeText(cbPreviewEl.textContent);
       showCopyFeedback('Copied!');
@@ -227,7 +199,8 @@
      ========================================================================== */
 
   cbAddFileBtn.addEventListener('click', () => addFileBlock());
-  cbCopyBtn.addEventListener('click', copyPreviewToClipboard);
+  cbCopyBtn.addEventListener('click', copyYamlToClipboard);
+  cbDownloadBtn.addEventListener('click', downloadYaml);
 
   renderPreview();
 })();
