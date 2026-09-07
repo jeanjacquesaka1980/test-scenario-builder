@@ -8,18 +8,35 @@
 //     test (one-or-more) + title
 //       step (one-or-more, per test) + title
 //
-// A step carries only a title — no action/target/locator, that's the
-// Test Scenario Builder's job, not this generator's. Step/test bodies are
-// emitted empty for the same reason.
+// A step's own body stays empty by design — no real action/target/
+// locator translation happens here, that's a human's (or an AI agent's)
+// job, not this generator's. What a step CAN optionally carry is a raw
+// `actions` list (from the Test Scenario Builder's YAML export, never
+// from a spec block authored directly in the Test Code Builder tab,
+// which is title-only) — each one rendered as a single raw comment line
+// inside the step body, fields joined as-is, no interpretation:
 //
-// Uses this project's own custom fixtures (describe/use/step) in place
-// of Playwright's test.describe/test.use/test.step, per the app's
-// convention — only imported when actually used in this file. The import
-// path is a placeholder; replace it with the real path to those fixtures
-// in the target project before running the generated file.
+//   step("Fill and submit", async () => {
+//     // click, submitButton
+//     // type, nameInput, John
+//   });
+//
+
+// Uses this project's own custom fixtures — describe, use, beforeEach,
+// test, and step all come from the SAME source (never Playwright's
+// test.describe/test.use/etc. directly), so they're always one deduped
+// import statement, naming only what this file actually uses (describe
+// and test always; use/beforeEach/step only when actually present). The
+// import path is a placeholder; replace it with the real path to those
+// fixtures in the target project before running the generated file.
 //
 // Like `data`, a spec block's name is locked to one fixed suffix —
 // <base>.spec.ts — since this block type only ever means "spec".
+//
+// If the Test Scenario Builder's YAML export carries scenarioDescription
+// and/or loginAndNavigation, they're rendered as a plain comment header
+// at the very top of the file, above the import — they aren't Playwright
+// code, so they never go inside "describe" itself.
 
 const FIXTURE_IMPORT_PATH = '<APP_FIXTURE_IMPORT_PATH>';
 
@@ -34,6 +51,14 @@ function assertValidStep(step, context, index) {
   if (!step || typeof step.title !== 'string' || step.title.trim() === '') {
     throw new Error(`${context} step ${index} is missing a title`);
   }
+  if (step.actions !== undefined && !Array.isArray(step.actions)) {
+    throw new Error(`${context} step ${index} ("${step.title}") has a non-array "actions"`);
+  }
+  (step.actions || []).forEach((action, actionIndex) => {
+    if (!action || typeof action.action !== 'string' || action.action.trim() === '') {
+      throw new Error(`${context} step ${index} ("${step.title}") action ${actionIndex} is missing an "action" field`);
+    }
+  });
 }
 
 function assertValidTest(testEntry, index) {
@@ -47,8 +72,48 @@ function assertValidTest(testEntry, index) {
   steps.forEach((step, stepIndex) => assertValidStep(step, `test "${testEntry.title}"`, stepIndex));
 }
 
+// Fields joined as-is, no interpretation — same raw-comment convention
+// as the original Test Code Builder spec's action rendering.
+function formatActionComment(action) {
+  const fields = [action.action, action.target, action.selection, action.value].filter(
+    (field) => field !== null && field !== undefined && String(field).trim() !== ''
+  );
+  return `// ${fields.join(', ')}`;
+}
+
+// Plain comment lines describing the scenario as a whole — not
+// Playwright code, so it sits above the import, not inside describe().
+function buildHeaderComment(block) {
+  const lines = [`// Scenario: ${block.title}`];
+
+  if (typeof block.description === 'string' && block.description.trim() !== '') {
+    lines.push(`// Description: ${block.description}`);
+  }
+
+  const loginAndNavigation = block.loginAndNavigation;
+  const hasLoginAndNavigation =
+    loginAndNavigation && (loginAndNavigation.userType || loginAndNavigation.unit || loginAndNavigation.navigationFlow);
+  if (hasLoginAndNavigation) {
+    lines.push('// Login and Navigation:');
+    if (loginAndNavigation.userType) lines.push(`//   User type: ${loginAndNavigation.userType}`);
+    if (loginAndNavigation.unit) lines.push(`//   Unit: ${loginAndNavigation.unit}`);
+    if (loginAndNavigation.navigationFlow) lines.push(`//   Navigation flow: ${loginAndNavigation.navigationFlow}`);
+  }
+
+  return lines;
+}
+
 function emitStep(step, indent) {
-  return [`${indent}step(${JSON.stringify(step.title)}, async () => {`, `${indent}});`].join('\n');
+  const lines = [`${indent}step(${JSON.stringify(step.title)}, async () => {`];
+  const actions = Array.isArray(step.actions) ? step.actions : [];
+  actions.forEach((action) => {
+    lines.push(`${indent}  ${formatActionComment(action)}`);
+    if (typeof action.note === 'string' && action.note.trim() !== '') {
+      lines.push(`${indent}  // note: ${action.note}`);
+    }
+  });
+  lines.push(`${indent}});`);
+  return lines.join('\n');
 }
 
 function generateContent(block) {
@@ -75,9 +140,12 @@ function generateContent(block) {
   const needsStep = beforeEachSteps.length > 0 || tests.some((t) => t.steps.length > 0);
   const importNames = ['describe'];
   if (block.use) importNames.push('use');
+  if (beforeEachEnabled) importNames.push('beforeEach');
+  importNames.push('test');
   if (needsStep) importNames.push('step');
 
-  const lines = [`import { ${importNames.join(', ')} } from '${FIXTURE_IMPORT_PATH}';`, ''];
+  const lines = [...buildHeaderComment(block), ''];
+  lines.push(`import { ${importNames.join(', ')} } from '${FIXTURE_IMPORT_PATH}';`, '');
   lines.push(`describe(${JSON.stringify(block.title)}, () => {`);
 
   if (block.use) {

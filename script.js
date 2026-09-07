@@ -267,6 +267,15 @@ const loginNavTemplate = document.getElementById('login-nav-template');
 const jsonPreviewEl = document.getElementById('json-preview');
 const copyJsonBtn = document.getElementById('copy-json-btn');
 const copyFeedbackEl = document.getElementById('copy-feedback');
+const exportTabBtnJson = document.getElementById('export-tab-btn-json');
+const exportTabBtnYaml = document.getElementById('export-tab-btn-yaml');
+const exportPanelJson = document.getElementById('export-panel-json');
+const exportPanelYaml = document.getElementById('export-panel-yaml');
+const yamlPreviewEl = document.getElementById('yaml-preview');
+const yamlPathInput = document.getElementById('yaml-path-input');
+const copyYamlBtn = document.getElementById('copy-yaml-btn');
+const downloadYamlBtn = document.getElementById('download-yaml-btn');
+const yamlCopyFeedbackEl = document.getElementById('yaml-copy-feedback');
 
 // Set once the beforeEach container is created (mode 'tests' only) — the
 // DOM list the shared beforeEach groups render into.
@@ -418,8 +427,12 @@ function renumberGroups(groupsArray) {
   });
 }
 
+// Name is legacy (from before the YAML export existed) — keeping it
+// avoids touching the ~28 call sites that trigger a re-render on every
+// field change. Refreshes both export previews together.
 function updateJsonPreview() {
   jsonPreviewEl.textContent = buildExportText();
+  yamlPreviewEl.textContent = buildYamlExportText();
 }
 
 /* ==========================================================================
@@ -1044,6 +1057,157 @@ function buildExportText() {
   return lines.join('\n');
 }
 
+/* ==========================================================================
+   YAML EXPORT (feeds generator/blocks/spec.js directly — that's now the
+   only source for spec generation; the Test Code Builder tab no longer
+   has its own spec block)
+   Maps this scenario onto that generator's "spec" block shape: each
+   Action/Assertion group becomes a "step" — its own title, falling back
+   to a numbered placeholder if left blank, since the generator requires
+   one — carrying its leaf actions, which the generator renders as raw
+   comment lines inside that step's body. Same idea as the pseudo-JSON
+   export (agent-readable, nothing interpreted), just landing as comments
+   in the generated .spec.ts instead of a separate prompt. `use` is
+   always true (every generated spec calls `use({})`). scenarioDescription
+   and loginAndNavigation ride along as extra fields the generator prints
+   as a comment header at the top of the file — they aren't Playwright
+   code, so they don't go inside "describe" itself, same reasoning as the
+   pseudo-JSON export. `path` comes from the "Output path" field in the
+   YAML export panel, since this tool has no notion of a target project.
+   ========================================================================== */
+
+function isYamlSafeBare(str) {
+  if (str === '') return false;
+  if (/^\s|\s$/.test(str)) return false;
+  if (/^[-?:,[\]{}#&*!|>'"%@`]/.test(str)) return false;
+  if (/: |:$/.test(str)) return false;
+  if (/^(null|Null|NULL|~|true|True|TRUE|false|False|FALSE)$/.test(str)) return false;
+  if (/^[+-]?(\.\d|\d)/.test(str) && !Number.isNaN(Number(str))) return false;
+  return true;
+}
+
+function yamlScalar(value) {
+  if (value === null || value === undefined) return 'null';
+  const str = String(value);
+  if (isYamlSafeBare(str)) return str;
+  return JSON.stringify(str); // a JSON string literal is also valid YAML
+}
+
+function slugify(text) {
+  const slug = text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'scenario';
+}
+
+function groupsToSpecSteps(groups) {
+  return groups.map((group, index) => {
+    const fallbackTitle = `${group.kind === 'assertion' ? 'Assertion' : 'Action'} ${index + 1}`;
+    return { title: group.title.trim() || fallbackTitle, actions: group.actions };
+  });
+}
+
+function pushSpecStepLines(lines, step, indent) {
+  lines.push(`${indent}- title: ${yamlScalar(step.title)}`);
+  if (step.actions.length === 0) {
+    lines.push(`${indent}  actions: []`);
+    return;
+  }
+  lines.push(`${indent}  actions:`);
+  step.actions.forEach((leaf) => {
+    lines.push(`${indent}    - action: ${yamlScalar(leaf.action)}`);
+    lines.push(`${indent}      target: ${yamlScalar(leaf.target)}`);
+    lines.push(`${indent}      selection: ${yamlScalar(leaf.selection)}`);
+    lines.push(`${indent}      value: ${yamlScalar(leaf.value)}`);
+    if (leaf.note && leaf.note.trim() !== '') {
+      lines.push(`${indent}      note: ${yamlScalar(leaf.note)}`);
+    }
+  });
+}
+
+function buildYamlExportText() {
+  const lines = ['blocks:', '  - type: spec'];
+  lines.push(`    name: ${yamlScalar(`${slugify(scenario.scenarioName)}.spec.ts`)}`);
+  lines.push(`    path: ${yamlScalar(yamlPathInput.value)}`);
+  lines.push(`    title: ${yamlScalar(scenario.scenarioName)}`);
+  lines.push(`    description: ${yamlScalar(scenario.scenarioDescription)}`);
+  if (scenario.loginAndNavigation) {
+    const { userType, unit, navigationFlow } = scenario.loginAndNavigation;
+    lines.push('    loginAndNavigation:');
+    lines.push(`      userType: ${yamlScalar(userType)}`);
+    lines.push(`      unit: ${yamlScalar(unit)}`);
+    lines.push(`      navigationFlow: ${yamlScalar(navigationFlow)}`);
+  } else {
+    lines.push('    loginAndNavigation: null');
+  }
+  lines.push('    use: true');
+
+  const hasBeforeEach = Boolean(scenario.beforeEach && scenario.beforeEach.length > 0);
+  lines.push('    beforeEach:');
+  lines.push(`      enabled: ${hasBeforeEach}`);
+  if (!hasBeforeEach) {
+    lines.push('      steps: []');
+  } else {
+    lines.push('      steps:');
+    groupsToSpecSteps(scenario.beforeEach).forEach((step) => {
+      pushSpecStepLines(lines, step, '        ');
+    });
+  }
+
+  if (scenario.tests.length === 0) {
+    lines.push('    tests: []');
+  } else {
+    lines.push('    tests:');
+    scenario.tests.forEach((test, testIndex) => {
+      const testTitle = test.title.trim() || `Test ${testIndex + 1}`;
+      lines.push(`      - title: ${yamlScalar(testTitle)}`);
+      const steps = groupsToSpecSteps(test.steps);
+      if (steps.length === 0) {
+        lines.push('        steps: []');
+      } else {
+        lines.push('        steps:');
+        steps.forEach((step) => {
+          pushSpecStepLines(lines, step, '          ');
+        });
+      }
+    });
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+function downloadYamlExport() {
+  const blob = new Blob([yamlPreviewEl.textContent], { type: 'text/yaml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugify(scenario.scenarioName)}.spec.yaml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+let yamlCopyFeedbackTimer = null;
+function showYamlCopyFeedback(message) {
+  yamlCopyFeedbackEl.textContent = message;
+  clearTimeout(yamlCopyFeedbackTimer);
+  yamlCopyFeedbackTimer = setTimeout(() => {
+    yamlCopyFeedbackEl.textContent = '';
+  }, 1800);
+}
+
+async function copyYamlToClipboard() {
+  try {
+    await navigator.clipboard.writeText(yamlPreviewEl.textContent);
+    showYamlCopyFeedback('Copied!');
+  } catch (err) {
+    showYamlCopyFeedback('Copy failed');
+  }
+}
+
 async function copyJsonToClipboard() {
   const text = buildExportText();
   try {
@@ -1098,6 +1262,25 @@ modeTestsBtn.addEventListener('click', () => {
 growTestBtn.addEventListener('click', () => growTestsScaffold());
 
 copyJsonBtn.addEventListener('click', copyJsonToClipboard);
+copyYamlBtn.addEventListener('click', copyYamlToClipboard);
+downloadYamlBtn.addEventListener('click', downloadYamlExport);
+yamlPathInput.addEventListener('input', () => {
+  yamlPreviewEl.textContent = buildYamlExportText();
+});
+
+exportTabBtnJson.addEventListener('click', () => {
+  exportTabBtnJson.classList.add('export-tab-btn-active');
+  exportTabBtnYaml.classList.remove('export-tab-btn-active');
+  exportPanelJson.hidden = false;
+  exportPanelYaml.hidden = true;
+});
+
+exportTabBtnYaml.addEventListener('click', () => {
+  exportTabBtnYaml.classList.add('export-tab-btn-active');
+  exportTabBtnJson.classList.remove('export-tab-btn-active');
+  exportPanelYaml.hidden = false;
+  exportPanelJson.hidden = true;
+});
 
 clearAllBtn.addEventListener('click', () => {
   clearConfirmDialog.showModal();
