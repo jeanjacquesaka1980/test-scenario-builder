@@ -1,0 +1,6 @@
+node_modules/
+
+# Test Code Builder YAML input is disposable scratch input for one
+# generation run each, not a persistent source of truth — keep it out of
+# version control (or delete it right after a successful run).
+.scratch/

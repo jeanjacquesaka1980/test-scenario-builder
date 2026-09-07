@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -13,7 +13,16 @@
     <button type="button" id="clear-all-btn" class="btn btn-clear-all">Clear all</button>
   </header>
 
-  <main class="app-main">
+  <!-- Two fully decoupled tools sharing only this shell — the Test Code
+       Builder (script: code-builder.js) has its own data model, own
+       templates, own generator, and knows nothing about the Test Scenario
+       Builder (script: script.js) or vice versa. -->
+  <nav class="app-tabs">
+    <button type="button" id="tab-btn-scenario" class="app-tab-btn app-tab-btn-active">Test Scenario Builder</button>
+    <button type="button" id="tab-btn-code" class="app-tab-btn">Test Code Builder</button>
+  </nav>
+
+  <main class="app-main" id="tab-panel-scenario">
 
     <!-- Scenario name -->
     <section class="scenario-name-section">
@@ -44,18 +53,207 @@
       </div>
     </section>
 
-    <!-- Export. Not strict JSON — see script.js EXPORT section for why —
-         so there's no "Download JSON" file, just copy the text. -->
+    <!-- Export: two representations of the same scenario, picked by tab.
+         Pseudo-JSON is the original agent-readable text — not strict
+         JSON, see script.js EXPORT section for why, so it's copy-only.
+         YAML matches the shape generator/blocks/spec.js expects: each
+         Action/Assertion block becomes a "step", its leaf actions become
+         raw comment lines in the generated .spec.ts — same idea as the
+         pseudo-JSON's agent-readable text, just landing as comments in
+         real code instead of a separate prompt. Since it's real,
+         parseable YAML meant to feed that generator, it also gets a
+         Download button, unlike the pseudo-JSON.
+
+         The YAML tab also asks two independent things at export time:
+         which app (see APP_CONFIGS in script.js — fixes the fixture
+         import path baked into the generated file, and the generator's
+         --out directory) and where the spec file itself should go (a
+         plain relative path, since one app can hold many different spec
+         folders — never tied to the app choice). Both together produce
+         a ready-to-copy CLI command and a combined destination preview,
+         so --out and the YAML's own path never have to be reasoned
+         about as two disconnected things even though they are two
+         separate settings under the hood. -->
     <section class="export-section">
       <h2>Export</h2>
-      <div class="export-buttons">
-        <button type="button" id="copy-json-btn" class="btn">Copy to clipboard</button>
-        <span id="copy-feedback" class="copy-feedback" aria-live="polite"></span>
+      <div class="export-tabs">
+        <button type="button" id="export-tab-btn-json" class="export-tab-btn export-tab-btn-active">Pseudo-JSON</button>
+        <button type="button" id="export-tab-btn-yaml" class="export-tab-btn">YAML</button>
       </div>
-      <pre id="json-preview" class="json-preview"></pre>
+
+      <div id="export-panel-json" class="export-panel">
+        <div class="export-buttons">
+          <button type="button" id="copy-json-btn" class="btn">Copy to clipboard</button>
+          <span id="copy-feedback" class="copy-feedback" aria-live="polite"></span>
+        </div>
+        <pre id="json-preview" class="json-preview"></pre>
+      </div>
+
+      <div id="export-panel-yaml" class="export-panel" hidden>
+        <div class="yaml-app-row">
+          <span id="yaml-app-label">Target app: <strong>Not set</strong></span>
+          <button type="button" id="yaml-app-config-btn" class="btn">Set target app</button>
+        </div>
+        <p id="yaml-destination-label" class="yaml-app-details"></p>
+
+        <div class="export-buttons">
+          <button type="button" id="copy-yaml-btn" class="btn">Copy to clipboard</button>
+          <button type="button" id="download-yaml-btn" class="btn">Download YAML</button>
+          <span id="yaml-copy-feedback" class="copy-feedback" aria-live="polite"></span>
+        </div>
+        <pre id="yaml-preview" class="json-preview"></pre>
+
+        <label class="yaml-command-label">
+          Command to run once the file is downloaded
+          <div class="yaml-command-row">
+            <pre id="yaml-command-preview" class="json-preview yaml-command-preview"></pre>
+            <button type="button" id="copy-command-btn" class="btn">Copy command</button>
+          </div>
+        </label>
+      </div>
     </section>
 
   </main>
+
+  <!-- Two independent settings for a YAML export, asked together since
+       both matter at export time, but never conflated:
+       - Which app: picks a FIXED entry from APP_CONFIGS (script.js) —
+         its fixtureImportPath (baked into the generated file's import)
+         and outDir (the generator's --out). No custom entry — one app
+         can have many different spec folders, so nothing here should
+         imply a 1:1 app-to-folder mapping.
+       - Spec folder: a plain, always-editable path, independent of which
+         app is picked, since one app can hold many different Playwright
+         spec folders. This is the YAML's own `path` field.
+       Opens automatically the first time Copy/Download is used in a
+       session; "Set target app" reopens it to change either later. -->
+  <dialog id="yaml-export-config-dialog" class="confirm-dialog">
+    <p>Which app is this scenario testing?</p>
+    <label class="cb-field">
+      App
+      <select id="yaml-app-select"></select>
+    </label>
+    <p id="yaml-app-details" class="yaml-app-details"></p>
+
+    <p>Where should this spec file go?</p>
+    <label class="cb-field">
+      Spec folder (relative path inside --out — e.g. src/tests/checkout)
+      <input type="text" id="yaml-spec-path-input" placeholder="e.g. src/tests/checkout">
+    </label>
+
+    <p id="yaml-destination-preview" class="yaml-app-details"></p>
+
+    <div class="confirm-dialog-buttons">
+      <button type="button" id="yaml-app-cancel-btn" class="btn">Cancel</button>
+      <button type="button" id="yaml-app-confirm-btn" class="btn btn-danger">Set app</button>
+    </div>
+  </dialog>
+
+  <!-- Test Code Builder: a second, fully decoupled tool. Pure authoring
+       UI — it assembles blocks and exports a .yaml file, nothing more. It
+       has no filesystem access and does not generate TypeScript; that
+       happens in a separate Node CLI (generator/generate.js, one module
+       per block type under generator/blocks/) run inside the target
+       project, which reads this YAML, validates paths, and writes real
+       files. File and data blocks only — the spec block moved to the
+       Test Scenario Builder tab's YAML export instead (see script.js),
+       since that's the tool that actually holds test/step content;
+       generator/blocks/spec.js is still what turns that YAML into a
+       .spec.ts, it just isn't authored from a block in this tab anymore. -->
+  <main class="app-main" id="tab-panel-code" hidden>
+
+    <section class="cb-blocks-section">
+      <div id="cb-blocks-list" class="cb-blocks-list"></div>
+      <div class="list-controls">
+        <button type="button" id="cb-add-file-btn" class="btn btn-add-test">+ File</button>
+        <button type="button" id="cb-add-data-btn" class="btn btn-add-test">+ data.ts</button>
+      </div>
+    </section>
+
+    <section class="export-section">
+      <h2>Export</h2>
+      <div class="export-buttons">
+        <button type="button" id="cb-copy-btn" class="btn">Copy to clipboard</button>
+        <button type="button" id="cb-download-btn" class="btn">Download YAML</button>
+        <span id="cb-copy-feedback" class="copy-feedback" aria-live="polite"></span>
+      </div>
+      <pre id="cb-preview" class="json-preview"></pre>
+    </section>
+
+  </main>
+
+  <!-- File block: `name` + `path` locate the output file; `content`, if
+       given, is written verbatim — otherwise the target project's
+       generator derives `export const <name> = {};` from the file name
+       (naming-convention rule lives in generator/generate.js, not here —
+       this tab only captures the raw fields). -->
+  <template id="cb-file-block-template">
+    <div class="cb-block cb-file-block" data-cb-block-id="">
+      <div class="cb-block-header">
+        <span class="cb-block-badge">File</span>
+        <button type="button" class="btn btn-icon btn-remove-block" title="Remove file">&times;</button>
+      </div>
+      <div class="cb-field-row">
+        <label class="cb-field">
+          Name
+          <input type="text" class="cb-file-name" placeholder="e.g. no-data-shown.data.ts">
+        </label>
+        <label class="cb-field">
+          Path
+          <input type="text" class="cb-file-path" placeholder="e.g. src/tests/fixtures">
+        </label>
+      </div>
+      <label class="cb-field cb-content-field">
+        Content (optional — leave empty to derive an export from the name)
+        <textarea class="cb-file-content" rows="3" placeholder="Leave empty to auto-derive export const ... = {};"></textarea>
+      </label>
+    </div>
+  </template>
+
+  <!-- Variable row inside a Data block: one `const` declaration. `type`
+       can name a custom type, in which case `importPath` produces a
+       named import for it — one per distinct (type, importPath) pair,
+       deduped by the generator. `value` is written verbatim, exactly as
+       typed (quotes and all), never interpreted. -->
+  <template id="cb-variable-row-template">
+    <div class="cb-variable-row" data-cb-variable-id="">
+      <select class="cb-variable-kind">
+        <option value="const">const</option>
+      </select>
+      <input type="text" class="cb-variable-name" placeholder="name">
+      <input type="text" class="cb-variable-type" placeholder="type (e.g. string)">
+      <input type="text" class="cb-variable-value" placeholder="value (e.g. 'hello')">
+      <input type="text" class="cb-variable-import-path" placeholder="import path (only for a custom type)">
+      <button type="button" class="btn btn-icon btn-remove-variable" title="Remove variable">&times;</button>
+    </div>
+  </template>
+
+  <!-- Data block: same name/path + naming-convention derivation as File,
+       plus zero-or-more variable rows. Each becomes a local `const`; all
+       of them land as shorthand properties on the one derived-name
+       export — that export object is the "barrel", bundling whatever
+       this file declares. Zero variables falls back to the same empty
+       `export const <name> = {};` as an empty File block. -->
+  <template id="cb-data-block-template">
+    <div class="cb-block cb-data-block" data-cb-block-id="">
+      <div class="cb-block-header">
+        <span class="cb-block-badge">data.ts</span>
+        <button type="button" class="btn btn-icon btn-remove-block" title="Remove data">&times;</button>
+      </div>
+      <div class="cb-field-row">
+        <label class="cb-field">
+          Name
+          <input type="text" class="cb-file-name" placeholder="e.g. user-fixture.data.ts">
+        </label>
+        <label class="cb-field">
+          Path
+          <input type="text" class="cb-file-path" placeholder="e.g. src/tests/fixtures">
+        </label>
+      </div>
+      <div class="cb-variables-list"></div>
+      <button type="button" class="btn btn-add-item cb-add-variable-btn">+ Variable</button>
+    </div>
+  </template>
 
   <!-- Confirmation dialog for "Clear all". A native <dialog> instead of
        window.confirm() so it renders reliably in every embedding context. -->
@@ -234,6 +432,8 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=30"></script>
+  <script src="script.js?v=34"></script>
+  <script src="tabs.js?v=1"></script>
+  <script src="code-builder.js?v=6"></script>
 </body>
 </html>

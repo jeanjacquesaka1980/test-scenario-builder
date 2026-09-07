@@ -267,6 +267,26 @@ const loginNavTemplate = document.getElementById('login-nav-template');
 const jsonPreviewEl = document.getElementById('json-preview');
 const copyJsonBtn = document.getElementById('copy-json-btn');
 const copyFeedbackEl = document.getElementById('copy-feedback');
+const exportTabBtnJson = document.getElementById('export-tab-btn-json');
+const exportTabBtnYaml = document.getElementById('export-tab-btn-yaml');
+const exportPanelJson = document.getElementById('export-panel-json');
+const exportPanelYaml = document.getElementById('export-panel-yaml');
+const yamlPreviewEl = document.getElementById('yaml-preview');
+const copyYamlBtn = document.getElementById('copy-yaml-btn');
+const downloadYamlBtn = document.getElementById('download-yaml-btn');
+const yamlCopyFeedbackEl = document.getElementById('yaml-copy-feedback');
+const yamlCommandPreviewEl = document.getElementById('yaml-command-preview');
+const copyCommandBtn = document.getElementById('copy-command-btn');
+const yamlAppLabelEl = document.getElementById('yaml-app-label');
+const yamlDestinationLabelEl = document.getElementById('yaml-destination-label');
+const yamlAppConfigBtn = document.getElementById('yaml-app-config-btn');
+const yamlAppDialog = document.getElementById('yaml-export-config-dialog');
+const yamlAppSelect = document.getElementById('yaml-app-select');
+const yamlAppDetailsEl = document.getElementById('yaml-app-details');
+const yamlSpecPathInput = document.getElementById('yaml-spec-path-input');
+const yamlDestinationPreviewEl = document.getElementById('yaml-destination-preview');
+const yamlAppCancelBtn = document.getElementById('yaml-app-cancel-btn');
+const yamlAppConfirmBtn = document.getElementById('yaml-app-confirm-btn');
 
 // Set once the beforeEach container is created (mode 'tests' only) — the
 // DOM list the shared beforeEach groups render into.
@@ -418,8 +438,13 @@ function renumberGroups(groupsArray) {
   });
 }
 
+// Name is legacy (from before the YAML export existed) — keeping it
+// avoids touching the ~28 call sites that trigger a re-render on every
+// field change. Refreshes both export previews together.
 function updateJsonPreview() {
   jsonPreviewEl.textContent = buildExportText();
+  yamlPreviewEl.textContent = buildYamlExportText();
+  yamlCommandPreviewEl.textContent = buildYamlCommand();
 }
 
 /* ==========================================================================
@@ -1044,6 +1069,257 @@ function buildExportText() {
   return lines.join('\n');
 }
 
+/* ==========================================================================
+   YAML EXPORT (feeds generator/blocks/spec.js directly — that's now the
+   only source for spec generation; the Test Code Builder tab no longer
+   has its own spec block)
+   Maps this scenario onto that generator's "spec" block shape: each
+   Action/Assertion group becomes a "step" — its own title, falling back
+   to a numbered placeholder if left blank, since the generator requires
+   one — carrying its leaf actions, which the generator renders as raw
+   comment lines inside that step's body. Same idea as the pseudo-JSON
+   export (agent-readable, nothing interpreted), just landing as comments
+   in the generated .spec.ts instead of a separate prompt. `use` is
+   always true (every generated spec calls `use({})`). scenarioDescription
+   and loginAndNavigation ride along as extra fields the generator prints
+   as a comment header at the top of the file — they aren't Playwright
+   code, so they don't go inside "describe" itself, same reasoning as the
+   pseudo-JSON export.
+
+   Two independent settings feed a YAML export, asked together but never
+   conflated: which app (fixes the generated file's fixture import and
+   the generator's --out directory — via the FIXED list in APP_CONFIGS
+   below, no custom entry) and where the spec file itself goes (a plain
+   relative path, since one app can hold many different spec folders —
+   there's no such thing as "the" folder for an app). EDIT APP_CONFIGS
+   with your real apps.
+   ========================================================================== */
+
+// EDIT THIS with your real apps. Each entry fixes what a YAML export
+// needs FROM the app itself: the fixture import path baked into the
+// generated file, and the generator's --out directory (that app's
+// project root on disk). Deliberately does NOT include a spec folder —
+// one app can hold many different Playwright spec folders, so that's
+// always a separate, always-editable choice (see yamlSpecPath below).
+const APP_CONFIGS = [
+  {
+    name: 'Example app',
+    fixtureImportPath: 'apps/example-app/test-utils/fixtures',
+    outDir: '/absolute/path/to/example-app',
+  },
+];
+
+let yamlExportConfig = null; // null until the app dialog is confirmed once
+let yamlSpecPath = ''; // independent of yamlExportConfig — see APP_CONFIGS comment
+
+function isYamlSafeBare(str) {
+  if (str === '') return false;
+  if (/^\s|\s$/.test(str)) return false;
+  if (/^[-?:,[\]{}#&*!|>'"%@`]/.test(str)) return false;
+  if (/: |:$/.test(str)) return false;
+  if (/^(null|Null|NULL|~|true|True|TRUE|false|False|FALSE)$/.test(str)) return false;
+  if (/^[+-]?(\.\d|\d)/.test(str) && !Number.isNaN(Number(str))) return false;
+  return true;
+}
+
+function yamlScalar(value) {
+  if (value === null || value === undefined) return 'null';
+  const str = String(value);
+  if (isYamlSafeBare(str)) return str;
+  return JSON.stringify(str); // a JSON string literal is also valid YAML
+}
+
+function slugify(text) {
+  const slug = text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'scenario';
+}
+
+function groupsToSpecSteps(groups) {
+  return groups.map((group, index) => {
+    const fallbackTitle = `${group.kind === 'assertion' ? 'Assertion' : 'Action'} ${index + 1}`;
+    return { title: group.title.trim() || fallbackTitle, actions: group.actions };
+  });
+}
+
+function pushSpecStepLines(lines, step, indent) {
+  lines.push(`${indent}- title: ${yamlScalar(step.title)}`);
+  if (step.actions.length === 0) {
+    lines.push(`${indent}  actions: []`);
+    return;
+  }
+  lines.push(`${indent}  actions:`);
+  step.actions.forEach((leaf) => {
+    lines.push(`${indent}    - action: ${yamlScalar(leaf.action)}`);
+    lines.push(`${indent}      target: ${yamlScalar(leaf.target)}`);
+    lines.push(`${indent}      selection: ${yamlScalar(leaf.selection)}`);
+    lines.push(`${indent}      value: ${yamlScalar(leaf.value)}`);
+    if (leaf.note && leaf.note.trim() !== '') {
+      lines.push(`${indent}      note: ${yamlScalar(leaf.note)}`);
+    }
+  });
+}
+
+function buildYamlExportText() {
+  const lines = ['blocks:', '  - type: spec'];
+  lines.push(`    name: ${yamlScalar(`${slugify(scenario.scenarioName)}.spec.ts`)}`);
+  lines.push(`    path: ${yamlScalar(yamlSpecPath)}`);
+  lines.push(`    fixtureImportPath: ${yamlScalar(yamlExportConfig ? yamlExportConfig.fixtureImportPath : '')}`);
+  lines.push(`    title: ${yamlScalar(scenario.scenarioName)}`);
+  lines.push(`    description: ${yamlScalar(scenario.scenarioDescription)}`);
+  if (scenario.loginAndNavigation) {
+    const { userType, unit, navigationFlow } = scenario.loginAndNavigation;
+    lines.push('    loginAndNavigation:');
+    lines.push(`      userType: ${yamlScalar(userType)}`);
+    lines.push(`      unit: ${yamlScalar(unit)}`);
+    lines.push(`      navigationFlow: ${yamlScalar(navigationFlow)}`);
+  } else {
+    lines.push('    loginAndNavigation: null');
+  }
+  lines.push('    use: true');
+
+  const hasBeforeEach = Boolean(scenario.beforeEach && scenario.beforeEach.length > 0);
+  lines.push('    beforeEach:');
+  lines.push(`      enabled: ${hasBeforeEach}`);
+  if (!hasBeforeEach) {
+    lines.push('      steps: []');
+  } else {
+    lines.push('      steps:');
+    groupsToSpecSteps(scenario.beforeEach).forEach((step) => {
+      pushSpecStepLines(lines, step, '        ');
+    });
+  }
+
+  if (scenario.tests.length === 0) {
+    lines.push('    tests: []');
+  } else {
+    lines.push('    tests:');
+    scenario.tests.forEach((test, testIndex) => {
+      const testTitle = test.title.trim() || `Test ${testIndex + 1}`;
+      lines.push(`      - title: ${yamlScalar(testTitle)}`);
+      const steps = groupsToSpecSteps(test.steps);
+      if (steps.length === 0) {
+        lines.push('        steps: []');
+      } else {
+        lines.push('        steps:');
+        steps.forEach((step) => {
+          pushSpecStepLines(lines, step, '          ');
+        });
+      }
+    });
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+// One command, ready to paste — --out only appears when the chosen app
+// actually has one, so the command still works (against cwd) before an
+// app has been picked.
+function buildYamlCommand() {
+  const filename = `${slugify(scenario.scenarioName)}.spec.yaml`;
+  const outDir = yamlExportConfig ? yamlExportConfig.outDir.trim() : '';
+  return outDir ? `node generator/generate.js ${filename} --out ${outDir}` : `node generator/generate.js ${filename}`;
+}
+
+function downloadYamlExport() {
+  const blob = new Blob([yamlPreviewEl.textContent], { type: 'text/yaml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${slugify(scenario.scenarioName)}.spec.yaml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ==========================================================================
+   TARGET APP DIALOG — see APP_CONFIGS above. Opens automatically the
+   first time Copy/Download is used in a session (pendingYamlAction tells
+   it what to do once confirmed); "Set target app" reopens it any time
+   to change the choice already made.
+   ========================================================================== */
+
+function populateYamlAppSelect() {
+  yamlAppSelect.innerHTML = '';
+  APP_CONFIGS.forEach((app, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = app.name;
+    yamlAppSelect.appendChild(option);
+  });
+}
+
+function formatAppDetails(app) {
+  return `Fixture import: ${app.fixtureImportPath}\n--out: ${app.outDir}`;
+}
+
+function formatDestination(app, specPath) {
+  const outDir = app ? app.outDir : '(no app set)';
+  const trimmedSpecPath = specPath.trim();
+  return trimmedSpecPath ? `${outDir}/${trimmedSpecPath}` : outDir;
+}
+
+function updateYamlAppLabel() {
+  yamlAppLabelEl.innerHTML = `Target app: <strong>${yamlExportConfig ? yamlExportConfig.name : 'Not set'}</strong>`;
+  yamlDestinationLabelEl.textContent = yamlExportConfig ? `Files land in: ${formatDestination(yamlExportConfig, yamlSpecPath)}` : '';
+}
+
+// Live-updates the dialog's own destination preview as either field
+// changes, before anything is confirmed.
+function refreshYamlDialogPreview() {
+  const app = APP_CONFIGS[Number(yamlAppSelect.value)];
+  if (app) yamlAppDetailsEl.textContent = formatAppDetails(app);
+  yamlDestinationPreviewEl.textContent = `Files will be written to: ${formatDestination(app, yamlSpecPathInput.value)}`;
+}
+
+let pendingYamlAction = null; // 'copy' | 'download' | null, set right before opening the dialog
+
+function openYamlAppDialog(action) {
+  pendingYamlAction = action;
+
+  if (yamlExportConfig) {
+    const presetIndex = APP_CONFIGS.indexOf(yamlExportConfig);
+    yamlAppSelect.value = String(presetIndex === -1 ? 0 : presetIndex);
+  } else if (APP_CONFIGS.length > 0) {
+    yamlAppSelect.value = '0';
+  }
+  yamlSpecPathInput.value = yamlSpecPath;
+
+  refreshYamlDialogPreview();
+  yamlAppDialog.showModal();
+}
+
+let yamlCopyFeedbackTimer = null;
+function showYamlCopyFeedback(message) {
+  yamlCopyFeedbackEl.textContent = message;
+  clearTimeout(yamlCopyFeedbackTimer);
+  yamlCopyFeedbackTimer = setTimeout(() => {
+    yamlCopyFeedbackEl.textContent = '';
+  }, 1800);
+}
+
+async function copyYamlToClipboard() {
+  try {
+    await navigator.clipboard.writeText(yamlPreviewEl.textContent);
+    showYamlCopyFeedback('Copied!');
+  } catch (err) {
+    showYamlCopyFeedback('Copy failed');
+  }
+}
+
+async function copyYamlCommand() {
+  try {
+    await navigator.clipboard.writeText(yamlCommandPreviewEl.textContent);
+    showYamlCopyFeedback('Command copied!');
+  } catch (err) {
+    showYamlCopyFeedback('Copy failed');
+  }
+}
+
 async function copyJsonToClipboard() {
   const text = buildExportText();
   try {
@@ -1099,6 +1375,63 @@ growTestBtn.addEventListener('click', () => growTestsScaffold());
 
 copyJsonBtn.addEventListener('click', copyJsonToClipboard);
 
+copyYamlBtn.addEventListener('click', () => {
+  if (!yamlExportConfig) {
+    openYamlAppDialog('copy');
+    return;
+  }
+  copyYamlToClipboard();
+});
+
+downloadYamlBtn.addEventListener('click', () => {
+  if (!yamlExportConfig) {
+    openYamlAppDialog('download');
+    return;
+  }
+  downloadYamlExport();
+});
+
+yamlAppConfigBtn.addEventListener('click', () => openYamlAppDialog(null));
+copyCommandBtn.addEventListener('click', copyYamlCommand);
+
+yamlAppSelect.addEventListener('change', refreshYamlDialogPreview);
+yamlSpecPathInput.addEventListener('input', refreshYamlDialogPreview);
+
+yamlAppCancelBtn.addEventListener('click', () => {
+  pendingYamlAction = null;
+  yamlAppDialog.close();
+});
+
+yamlAppConfirmBtn.addEventListener('click', () => {
+  yamlExportConfig = APP_CONFIGS[Number(yamlAppSelect.value)];
+  yamlSpecPath = yamlSpecPathInput.value.trim();
+
+  updateYamlAppLabel();
+  yamlAppDialog.close();
+  updateJsonPreview();
+
+  if (pendingYamlAction === 'copy') {
+    copyYamlToClipboard();
+  } else if (pendingYamlAction === 'download') {
+    downloadYamlExport();
+  }
+  pendingYamlAction = null;
+});
+
+exportTabBtnJson.addEventListener('click', () => {
+  exportTabBtnJson.classList.add('export-tab-btn-active');
+  exportTabBtnYaml.classList.remove('export-tab-btn-active');
+  exportPanelJson.hidden = false;
+  exportPanelYaml.hidden = true;
+});
+
+exportTabBtnYaml.addEventListener('click', () => {
+  exportTabBtnYaml.classList.add('export-tab-btn-active');
+  exportTabBtnJson.classList.remove('export-tab-btn-active');
+  exportPanelYaml.hidden = false;
+  exportPanelJson.hidden = true;
+});
+
 clearAllBtn.addEventListener('click', () => {
   clearConfirmDialog.showModal();
 });
@@ -1136,6 +1469,7 @@ modeSwitchConfirmBtn.addEventListener('click', () => {
 
 function init() {
   updateModeButtonsVisibility();
+  populateYamlAppSelect();
   updateJsonPreview();
 }
 
