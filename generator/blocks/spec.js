@@ -27,8 +27,10 @@
 // test.describe/test.use/etc. directly), so they're always one deduped
 // import statement, naming only what this file actually uses (describe
 // and test always; use/beforeEach/step only when actually present). The
-// import path is a placeholder; replace it with the real path to those
-// fixtures in the target project before running the generated file.
+// import path comes from the block's own `fixtureImportPath` field (set
+// by the Test Scenario Builder's app-config dialog) when present;
+// otherwise it falls back to the FIXTURE_IMPORT_PATH placeholder below,
+// to be replaced by hand before running the generated file.
 //
 // Like `data`, a spec block's name is locked to one fixed suffix —
 // <base>.spec.ts — since this block type only ever means "spec".
@@ -144,8 +146,13 @@ function generateContent(block) {
   importNames.push('test');
   if (needsStep) importNames.push('step');
 
+  const fixtureImportPath =
+    typeof block.fixtureImportPath === 'string' && block.fixtureImportPath.trim() !== ''
+      ? block.fixtureImportPath.trim()
+      : FIXTURE_IMPORT_PATH;
+
   const lines = [...buildHeaderComment(block), ''];
-  lines.push(`import { ${importNames.join(', ')} } from '${FIXTURE_IMPORT_PATH}';`, '');
+  lines.push(`import { ${importNames.join(', ')} } from '${fixtureImportPath}';`, '');
   lines.push(`describe(${JSON.stringify(block.title)}, () => {`);
 
   if (block.use) {

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -62,7 +62,16 @@
          pseudo-JSON's agent-readable text, just landing as comments in
          real code instead of a separate prompt. Since it's real,
          parseable YAML meant to feed that generator, it also gets a
-         Download button, unlike the pseudo-JSON. -->
+         Download button, unlike the pseudo-JSON.
+
+         The YAML tab also picks a "target app" (see APP_CONFIGS in
+         script.js) — one choice that bundles three things that used to
+         be separate decisions: the fixture import path baked into the
+         generated file, the spec's own path (subfolder), and the
+         generator's --out directory. Picking it also produces a
+         ready-to-copy CLI command, since --out and the YAML's path are
+         two different flags/fields under the hood but shouldn't need to
+         be reasoned about separately. -->
     <section class="export-section">
       <h2>Export</h2>
       <div class="export-tabs">
@@ -79,20 +88,61 @@
       </div>
 
       <div id="export-panel-yaml" class="export-panel" hidden>
-        <label class="yaml-path-field">
-          Output path (relative to wherever the generator's --out points)
-          <input type="text" id="yaml-path-input" placeholder="e.g. src/tests">
-        </label>
+        <div class="yaml-app-row">
+          <span id="yaml-app-label">Target app: <strong>Not set</strong></span>
+          <button type="button" id="yaml-app-config-btn" class="btn">Set target app</button>
+        </div>
+
         <div class="export-buttons">
           <button type="button" id="copy-yaml-btn" class="btn">Copy to clipboard</button>
           <button type="button" id="download-yaml-btn" class="btn">Download YAML</button>
           <span id="yaml-copy-feedback" class="copy-feedback" aria-live="polite"></span>
         </div>
         <pre id="yaml-preview" class="json-preview"></pre>
+
+        <label class="yaml-command-label">
+          Command to run once the file is downloaded
+          <div class="yaml-command-row">
+            <pre id="yaml-command-preview" class="json-preview yaml-command-preview"></pre>
+            <button type="button" id="copy-command-btn" class="btn">Copy command</button>
+          </div>
+        </label>
       </div>
     </section>
 
   </main>
+
+  <!-- Picks the "target app" for a YAML export — one choice standing in
+       for three separate settings (fixture import path, spec subfolder,
+       generator --out directory) that would otherwise have to be
+       reasoned about independently. Opens automatically the first time
+       Copy/Download is used in a session; "Set target app" reopens it to
+       change later. -->
+  <dialog id="yaml-export-config-dialog" class="confirm-dialog">
+    <p>Which app is this scenario testing?</p>
+    <label class="cb-field">
+      App
+      <select id="yaml-app-select"></select>
+    </label>
+    <div id="yaml-app-custom-fields" hidden>
+      <label class="cb-field">
+        Fixture import path
+        <input type="text" id="yaml-app-custom-fixture" placeholder="e.g. apps/my-app/test-utils/fixtures">
+      </label>
+      <label class="cb-field">
+        --out directory
+        <input type="text" id="yaml-app-custom-outdir" placeholder="e.g. /Users/you/workspaces/my-app">
+      </label>
+      <label class="cb-field">
+        Spec path (subfolder inside --out)
+        <input type="text" id="yaml-app-custom-specpath" placeholder="e.g. src/tests">
+      </label>
+    </div>
+    <div class="confirm-dialog-buttons">
+      <button type="button" id="yaml-app-cancel-btn" class="btn">Cancel</button>
+      <button type="button" id="yaml-app-confirm-btn" class="btn btn-danger">Set app</button>
+    </div>
+  </dialog>
 
   <!-- Test Code Builder: a second, fully decoupled tool. Pure authoring
        UI — it assembles blocks and exports a .yaml file, nothing more. It
@@ -377,7 +427,7 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=32"></script>
+  <script src="script.js?v=33"></script>
   <script src="tabs.js?v=1"></script>
   <script src="code-builder.js?v=6"></script>
 </body>

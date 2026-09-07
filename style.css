@@ -694,24 +694,34 @@ label {
   border-bottom-color: #1a5fb4;
 }
 
-.yaml-path-field {
+.yaml-app-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #444;
+}
+
+.yaml-command-label {
+  display: block;
+  margin-top: 12px;
   font-size: 12px;
   font-weight: 600;
   color: #555;
-  margin-bottom: 10px;
 }
 
-.yaml-path-field input {
-  padding: 7px 9px;
-  border: 1px solid #cfd3d9;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 400;
-  background: #fff;
-  color: #1a1d21;
+.yaml-command-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.yaml-command-preview {
+  flex: 1 1 auto;
+  max-height: none;
+  margin: 0;
 }
 
 .export-buttons {
