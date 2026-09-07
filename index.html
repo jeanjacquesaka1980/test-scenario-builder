@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
@@ -13,7 +13,16 @@
     <button type="button" id="clear-all-btn" class="btn btn-clear-all">Clear all</button>
   </header>
 
-  <main class="app-main">
+  <!-- Two fully decoupled tools sharing only this shell — the Test Code
+       Builder (script: code-builder.js) has its own data model, own
+       templates, own generator, and knows nothing about the Test Scenario
+       Builder (script: script.js) or vice versa. -->
+  <nav class="app-tabs">
+    <button type="button" id="tab-btn-scenario" class="app-tab-btn app-tab-btn-active">Test Scenario Builder</button>
+    <button type="button" id="tab-btn-code" class="app-tab-btn">Test Code Builder</button>
+  </nav>
+
+  <main class="app-main" id="tab-panel-scenario">
 
     <!-- Scenario name -->
     <section class="scenario-name-section">
@@ -56,6 +65,61 @@
     </section>
 
   </main>
+
+  <!-- Test Code Builder: a second, fully decoupled tool. Own YAML-shaped
+       data model (blocks: file | describe | ...), own deterministic
+       TypeScript generator, no AI in this path. v1 build order — file
+       blocks only so far; describe/use/beforeEach/tests come in later
+       steps, one at a time. -->
+  <main class="app-main" id="tab-panel-code" hidden>
+
+    <section class="cb-blocks-section">
+      <div id="cb-blocks-list" class="cb-blocks-list"></div>
+      <div class="list-controls">
+        <button type="button" id="cb-add-file-btn" class="btn btn-add-test">+ File</button>
+      </div>
+    </section>
+
+    <section class="export-section">
+      <h2>Export</h2>
+      <div class="export-buttons">
+        <button type="button" id="cb-copy-btn" class="btn">Copy to clipboard</button>
+        <span id="cb-copy-feedback" class="copy-feedback" aria-live="polite"></span>
+      </div>
+      <pre id="cb-preview" class="json-preview"></pre>
+    </section>
+
+  </main>
+
+  <!-- File block: `name` + `path` locate the output file; `content`, if
+       given, is written verbatim — otherwise the naming-convention rule
+       derives `export const <name> = {};` from the file name. -->
+  <template id="cb-file-block-template">
+    <div class="cb-block cb-file-block" data-cb-block-id="">
+      <div class="cb-block-header">
+        <span class="cb-block-badge">File</span>
+        <button type="button" class="btn btn-icon btn-remove-block" title="Remove file">&times;</button>
+      </div>
+      <div class="cb-field-row">
+        <label class="cb-field">
+          Name
+          <input type="text" class="cb-file-name" placeholder="e.g. no-data-shown.data.ts">
+        </label>
+        <label class="cb-field">
+          Path
+          <input type="text" class="cb-file-path" placeholder="e.g. src/tests/fixtures">
+        </label>
+      </div>
+      <label class="cb-field cb-content-field">
+        Content (optional — leave empty to derive an export from the name)
+        <textarea class="cb-file-content" rows="3" placeholder="Leave empty to auto-derive export const ... = {};"></textarea>
+      </label>
+      <div class="cb-block-output-row">
+        <button type="button" class="btn cb-download-btn">Download this file</button>
+        <span class="cb-block-error" hidden></span>
+      </div>
+    </div>
+  </template>
 
   <!-- Confirmation dialog for "Clear all". A native <dialog> instead of
        window.confirm() so it renders reliably in every embedding context. -->
@@ -235,5 +299,7 @@
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
   <script src="script.js?v=30"></script>
+  <script src="tabs.js?v=1"></script>
+  <script src="code-builder.js?v=1"></script>
 </body>
 </html>
