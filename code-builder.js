@@ -294,12 +294,27 @@
      project files; that's the separate Node generator's job.
      ========================================================================== */
 
+  // With exactly one block, name the download after that block's own
+  // name (swapping ".ts" for ".yaml") so it's obvious which file it's
+  // for. With zero or several blocks there's no one name to use, so it
+  // falls back to a generic name.
+  function deriveYamlFilename() {
+    if (cbState.blocks.length === 1) {
+      const name = cbState.blocks[0].name.trim();
+      if (name !== '') {
+        const base = name.endsWith('.ts') ? name.slice(0, -3) : name;
+        return `${base}.yaml`;
+      }
+    }
+    return 'test-code-builder.yaml';
+  }
+
   function downloadYaml() {
     const blob = new Blob([cbPreviewEl.textContent], { type: 'text/yaml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'test-code-builder.yaml';
+    a.download = deriveYamlFilename();
     document.body.appendChild(a);
     a.click();
     a.remove();
