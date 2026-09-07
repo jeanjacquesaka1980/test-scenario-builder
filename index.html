@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 
@@ -81,6 +81,7 @@
       <div class="list-controls">
         <button type="button" id="cb-add-file-btn" class="btn btn-add-test">+ File</button>
         <button type="button" id="cb-add-data-btn" class="btn btn-add-test">+ data.ts</button>
+        <button type="button" id="cb-add-spec-btn" class="btn btn-add-test">+ spec.ts</button>
       </div>
     </section>
 
@@ -166,6 +167,87 @@
       </div>
       <div class="cb-variables-list"></div>
       <button type="button" class="btn btn-add-item cb-add-variable-btn">+ Variable</button>
+    </div>
+  </template>
+
+  <!-- Spec step: title only, nothing else — no action, target, or
+       locator, that's the Test Scenario Builder's job. Reused for a
+       step under beforeEach and a step under any test. -->
+  <template id="cb-spec-step-template">
+    <div class="cb-spec-step" data-cb-spec-step-id="">
+      <span class="cb-spec-step-badge">step</span>
+      <input type="text" class="cb-spec-step-title" placeholder="Step title">
+      <button type="button" class="btn btn-icon btn-remove-spec-step" title="Remove step">&times;</button>
+    </div>
+  </template>
+
+  <!-- Spec test: repeatable under describe, its own title, one-or-more
+       steps of its own — "+ Add step" here is scoped to this one test,
+       not global. -->
+  <template id="cb-spec-test-template">
+    <div class="cb-spec-test" data-cb-spec-test-id="">
+      <div class="cb-spec-test-header">
+        <span class="cb-spec-test-badge">test</span>
+        <input type="text" class="cb-spec-test-title" placeholder="Test title">
+        <button type="button" class="btn btn-icon btn-remove-spec-test" title="Remove test">&times;</button>
+      </div>
+      <div class="cb-spec-steps-list"></div>
+      <button type="button" class="btn btn-add-item cb-spec-add-step-btn">+ Add step</button>
+    </div>
+  </template>
+
+  <!-- Spec block: a fixed nesting, not a flat list — one describe
+       (title) at the top, `use` and `beforeEach` as simple on/off
+       toggles under it (neither repeatable, neither configurable beyond
+       on/off), one-or-more tests under describe, one-or-more steps under
+       beforeEach (when on) and under each test. Nothing below step level
+       (actions/locators/targets) is this tool's job. Name/path place the
+       output file, same as File and Data, with the same kind of fixed
+       suffix requirement as Data's ".data.ts" — here it's ".spec.ts". -->
+  <template id="cb-spec-block-template">
+    <div class="cb-block cb-spec-block" data-cb-block-id="">
+      <div class="cb-block-header">
+        <span class="cb-block-badge">spec.ts</span>
+        <button type="button" class="btn btn-icon btn-remove-block" title="Remove spec">&times;</button>
+      </div>
+
+      <div class="cb-field-row">
+        <label class="cb-field">
+          Name
+          <input type="text" class="cb-file-name" placeholder="e.g. login-flow.spec.ts">
+        </label>
+        <label class="cb-field">
+          Path
+          <input type="text" class="cb-file-path" placeholder="e.g. src/tests">
+        </label>
+      </div>
+
+      <label class="cb-field cb-spec-describe-title-field">
+        Describe title
+        <input type="text" class="cb-spec-describe-title" placeholder="e.g. Login flow">
+      </label>
+
+      <label class="cb-spec-toggle">
+        <input type="checkbox" class="cb-spec-use-toggle">
+        use
+      </label>
+
+      <div class="cb-spec-before-each">
+        <label class="cb-spec-toggle">
+          <input type="checkbox" class="cb-spec-before-each-toggle">
+          beforeEach
+        </label>
+        <div class="cb-spec-before-each-body" hidden>
+          <div class="cb-spec-before-each-steps-list"></div>
+          <button type="button" class="btn btn-add-item cb-spec-add-before-each-step-btn">+ Add step</button>
+        </div>
+      </div>
+
+      <div class="cb-spec-tests-section">
+        <span class="cb-spec-tests-label">test</span>
+        <div class="cb-spec-tests-list"></div>
+        <button type="button" class="btn btn-add-item cb-spec-add-test-btn">+ Add test</button>
+      </div>
     </div>
   </template>
 
@@ -348,6 +430,6 @@
        browsers don't keep serving a stale cached copy during development. -->
   <script src="script.js?v=30"></script>
   <script src="tabs.js?v=1"></script>
-  <script src="code-builder.js?v=4"></script>
+  <script src="code-builder.js?v=5"></script>
 </body>
 </html>

@@ -33,6 +33,7 @@ const yaml = require('js-yaml');
 const blockGenerators = {
   file: require('./blocks/file'),
   data: require('./blocks/data'),
+  spec: require('./blocks/spec'),
 };
 
 function parseArgs(argv) {
