@@ -643,7 +643,8 @@ label {
   background: #fef3e2;
 }
 
-.btn-remove-block {
+.btn-remove-block,
+.btn-remove-variable {
   color: #b3261e;
   border-color: #e3b3b0;
 }
@@ -710,7 +711,8 @@ label {
   padding: 10px 12px;
 }
 
-.cb-file-block {
+.cb-file-block,
+.cb-data-block {
   border: 1px solid #cbb8f0;
   background: #f9f6ff;
 }
@@ -773,6 +775,64 @@ label {
 
 .cb-content-field textarea {
   resize: vertical;
+}
+
+.cb-variables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cb-variables-list:empty {
+  margin-bottom: 0;
+}
+
+.cb-variable-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #ded8f7;
+  border-radius: 4px;
+  padding: 6px;
+}
+
+.cb-variable-row select,
+.cb-variable-row input {
+  padding: 6px 8px;
+  border: 1px solid #cfd3d9;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.cb-variable-kind {
+  flex: 0 0 80px;
+}
+
+.cb-variable-name {
+  flex: 1 1 100px;
+}
+
+.cb-variable-type {
+  flex: 1 1 120px;
+}
+
+.cb-variable-value {
+  flex: 1 1 140px;
+}
+
+.cb-variable-import-path {
+  flex: 1 1 180px;
+}
+
+.cb-variable-row .btn-remove-variable {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 /* ==========================================================================

@@ -14,8 +14,11 @@
 // Usage:
 //   node generator/generate.js <path-to-yaml> [--out <dir>] [--force] [--dry-run] [--cleanup]
 //
-// v1: only `file` blocks are supported (matches the Builder's current
-// build step). describe/use/beforeEach/tests come later, on both sides.
+// Each block type owns its own module under blocks/ (file.js, data.js,
+// and future ones like class.js / type.js / spec.js) — this file only
+// handles the shared plumbing: CLI args, reading/parsing the YAML, path
+// safety, the existing-file check, dry-run, and actually writing. It
+// dispatches `block.type` to the matching module's generateContent().
 //
 // These YAML files are disposable scratch input for one generation run
 // each — not a persistent contract with the code they produce. Keep them
@@ -26,6 +29,11 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+
+const blockGenerators = {
+  file: require('./blocks/file'),
+  data: require('./blocks/data'),
+};
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -50,47 +58,6 @@ function parseArgs(argv) {
 function fail(message) {
   console.error(`Error: ${message}`);
   process.exit(1);
-}
-
-/* ==========================================================================
-   NAMING CONVENTION (file blocks with no content) — fixed rule, not
-   configurable. "no-data-shown.data.ts" -> base "no-data-shown", suffix
-   "data" -> "export const noDataShownData = {};". A file name that isn't
-   exactly <base>.<suffix>.ts is a hard error, not a silent fallback.
-   ========================================================================== */
-
-function kebabToCamel(str) {
-  return str
-    .split('-')
-    .filter((word) => word !== '')
-    .map((word, i) => (i === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()))
-    .join('');
-}
-
-function deriveConstName(fileName) {
-  const parts = fileName.split('.');
-  if (parts.length !== 3 || parts[2] !== 'ts') {
-    throw new Error(
-      `"${fileName}" must look like <base>.<suffix>.ts to derive an export name (got ${parts.length} dot-separated part${parts.length === 1 ? '' : 's'})`
-    );
-  }
-  const [base, suffix] = parts;
-  if (base === '' || suffix === '') {
-    throw new Error(`"${fileName}" is missing its base name or suffix`);
-  }
-  const capitalizedSuffix = suffix.charAt(0).toUpperCase() + suffix.slice(1).toLowerCase();
-  return `${kebabToCamel(base)}${capitalizedSuffix}`;
-}
-
-// `content`, when present, is treated purely as a string to write
-// verbatim — never eval'd or otherwise executed.
-function generateFileBlockContent(block) {
-  const content = typeof block.content === 'string' ? block.content.trim() : '';
-  if (content !== '') {
-    return content.endsWith('\n') ? content : `${content}\n`;
-  }
-  const constName = deriveConstName(block.name);
-  return `export const ${constName} = {};\n`;
 }
 
 /* ==========================================================================
@@ -138,14 +105,16 @@ function resolveSafeTargetPath(root, blockPath, name) {
 
 function buildPlan(blocks, root, force) {
   return blocks.map((block, index) => {
-    if (!block || block.type !== 'file') {
+    const generator = block && blockGenerators[block.type];
+    if (!generator) {
       const type = block && block.type;
-      return { index, error: `block ${index} has unsupported type "${type}" (only "file" blocks are supported by this generator version)` };
+      const supported = Object.keys(blockGenerators).join(', ');
+      return { index, error: `block ${index} has unsupported type "${type}" (supported types: ${supported})` };
     }
 
     try {
       const targetPath = resolveSafeTargetPath(root, block.path, block.name);
-      const content = generateFileBlockContent(block);
+      const content = generator.generateContent(block);
       const exists = fs.existsSync(targetPath);
       if (exists && !force) {
         return { index, targetPath, error: `"${targetPath}" already exists (re-run with --force to overwrite it)` };

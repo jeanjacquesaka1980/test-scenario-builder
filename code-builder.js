@@ -14,7 +14,8 @@
 //     path-safety checks, etc. — none of that logic belongs here.
 //
 // v1 build order — build and verify one numbered feature at a time:
-//   1. `file` block only                              <- this is where we are
+//   1. `file` block only                              <- done
+//   1b. `data` block (variables -> const lines + barrel export)  <- this is where we are
 //   2. `describe` block, empty body
 //   3. `use` boolean toggle
 //   4. `beforeEach` boolean toggle
@@ -22,6 +23,8 @@
 //
 // Shape so far:
 //   block = { id, type: 'file', name, path, content }
+//   block = { id, type: 'data', name, path, variables: [...] }
+//   variable = { id, kind: 'const', name, type, value, importPath }
 (function () {
   const cbState = {
     blocks: [],
@@ -37,11 +40,22 @@
     return { id: cbNextBlockId(), type: 'file', name: '', path: '', content: '' };
   }
 
+  function createDataBlock() {
+    return { id: cbNextBlockId(), type: 'data', name: '', path: '', variables: [] };
+  }
+
+  function createVariable() {
+    return { id: cbNextBlockId(), kind: 'const', name: '', type: '', value: '', importPath: '' };
+  }
+
   const cbBlocksById = new Map(); // block id -> { el }
 
   const cbBlocksListEl = document.getElementById('cb-blocks-list');
   const cbAddFileBtn = document.getElementById('cb-add-file-btn');
+  const cbAddDataBtn = document.getElementById('cb-add-data-btn');
   const cbFileBlockTemplate = document.getElementById('cb-file-block-template');
+  const cbDataBlockTemplate = document.getElementById('cb-data-block-template');
+  const cbVariableRowTemplate = document.getElementById('cb-variable-row-template');
   const cbPreviewEl = document.getElementById('cb-preview');
   const cbCopyBtn = document.getElementById('cb-copy-btn');
   const cbDownloadBtn = document.getElementById('cb-download-btn');
@@ -105,6 +119,102 @@
     renderPreview();
   }
 
+  function createVariableRowElement(block, variable) {
+    const fragment = cbVariableRowTemplate.content.cloneNode(true);
+    const rowEl = fragment.querySelector('.cb-variable-row');
+    rowEl.dataset.cbVariableId = variable.id;
+
+    const kindSelect = rowEl.querySelector('.cb-variable-kind');
+    const nameInput = rowEl.querySelector('.cb-variable-name');
+    const typeInput = rowEl.querySelector('.cb-variable-type');
+    const valueInput = rowEl.querySelector('.cb-variable-value');
+    const importPathInput = rowEl.querySelector('.cb-variable-import-path');
+    const removeBtn = rowEl.querySelector('.btn-remove-variable');
+
+    kindSelect.value = variable.kind;
+    nameInput.value = variable.name;
+    typeInput.value = variable.type;
+    valueInput.value = variable.value;
+    importPathInput.value = variable.importPath;
+
+    kindSelect.addEventListener('change', () => {
+      variable.kind = kindSelect.value;
+      renderPreview();
+    });
+    nameInput.addEventListener('input', () => {
+      variable.name = nameInput.value;
+      renderPreview();
+    });
+    typeInput.addEventListener('input', () => {
+      variable.type = typeInput.value;
+      renderPreview();
+    });
+    valueInput.addEventListener('input', () => {
+      variable.value = valueInput.value;
+      renderPreview();
+    });
+    importPathInput.addEventListener('input', () => {
+      variable.importPath = importPathInput.value;
+      renderPreview();
+    });
+
+    removeBtn.addEventListener('click', () => {
+      const index = block.variables.findIndex((v) => v.id === variable.id);
+      if (index !== -1) block.variables.splice(index, 1);
+      rowEl.remove();
+      renderPreview();
+    });
+
+    return rowEl;
+  }
+
+  function createDataBlockElement(block) {
+    const fragment = cbDataBlockTemplate.content.cloneNode(true);
+    const blockEl = fragment.querySelector('.cb-data-block');
+    blockEl.dataset.cbBlockId = block.id;
+
+    const nameInput = blockEl.querySelector('.cb-file-name');
+    const pathInput = blockEl.querySelector('.cb-file-path');
+    const removeBtn = blockEl.querySelector('.btn-remove-block');
+    const variablesListEl = blockEl.querySelector('.cb-variables-list');
+    const addVariableBtn = blockEl.querySelector('.cb-add-variable-btn');
+
+    nameInput.value = block.name;
+    pathInput.value = block.path;
+
+    nameInput.addEventListener('input', () => {
+      block.name = nameInput.value;
+      renderPreview();
+    });
+    pathInput.addEventListener('input', () => {
+      block.path = pathInput.value;
+      renderPreview();
+    });
+
+    removeBtn.addEventListener('click', () => removeBlock(block.id));
+
+    for (const variable of block.variables) {
+      variablesListEl.appendChild(createVariableRowElement(block, variable));
+    }
+
+    addVariableBtn.addEventListener('click', () => {
+      const variable = createVariable();
+      block.variables.push(variable);
+      variablesListEl.appendChild(createVariableRowElement(block, variable));
+      renderPreview();
+    });
+
+    cbBlocksById.set(block.id, { el: blockEl });
+    return blockEl;
+  }
+
+  function addDataBlock() {
+    const block = createDataBlock();
+    cbState.blocks.push(block);
+    cbBlocksListEl.appendChild(createDataBlockElement(block));
+    renderPreview();
+  }
+
   /* ==========================================================================
      YAML SERIALIZATION
      Hand-written rather than a library, since the shape is small and
@@ -143,7 +253,27 @@
 
     const lines = ['blocks:'];
     for (const block of blocks) {
-      lines.push(`  - type: file`);
+      if (block.type === 'data') {
+        lines.push('  - type: data');
+        lines.push(`    name: ${yamlScalar(block.name)}`);
+        lines.push(`    path: ${yamlScalar(block.path)}`);
+        if (block.variables.length === 0) {
+          lines.push('    variables: []');
+        } else {
+          lines.push('    variables:');
+          for (const variable of block.variables) {
+            lines.push(`      - kind: ${yamlScalar(variable.kind)}`);
+            lines.push(`        name: ${yamlScalar(variable.name)}`);
+            lines.push(`        type: ${yamlScalar(variable.type)}`);
+            lines.push(`        value: ${yamlScalar(variable.value)}`);
+            const importPath = variable.importPath.trim();
+            lines.push(`        importPath: ${importPath === '' ? 'null' : yamlScalar(importPath)}`);
+          }
+        }
+        continue;
+      }
+
+      lines.push('  - type: file');
       lines.push(`    name: ${yamlScalar(block.name)}`);
       lines.push(`    path: ${yamlScalar(block.path)}`);
       if (block.content.trim() !== '') {
@@ -199,6 +329,7 @@
      ========================================================================== */
 
   cbAddFileBtn.addEventListener('click', () => addFileBlock());
+  cbAddDataBtn.addEventListener('click', () => addDataBlock());
   cbCopyBtn.addEventListener('click', copyYamlToClipboard);
   cbDownloadBtn.addEventListener('click', downloadYaml);
 

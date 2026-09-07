@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 
@@ -69,9 +69,10 @@
   <!-- Test Code Builder: a second, fully decoupled tool. Pure authoring
        UI — it assembles blocks and exports a .yaml file, nothing more. It
        has no filesystem access and does not generate TypeScript; that
-       happens in a separate Node CLI (generator/generate.js) run inside
-       the target project, which reads this YAML, validates paths, and
-       writes real files. v1 build order — file blocks only so far;
+       happens in a separate Node CLI (generator/generate.js, one module
+       per block type under generator/blocks/) run inside the target
+       project, which reads this YAML, validates paths, and writes real
+       files. v1 build order — file and data blocks only so far;
        describe/use/beforeEach/tests come in later steps, one at a time. -->
   <main class="app-main" id="tab-panel-code" hidden>
 
@@ -79,6 +80,7 @@
       <div id="cb-blocks-list" class="cb-blocks-list"></div>
       <div class="list-controls">
         <button type="button" id="cb-add-file-btn" class="btn btn-add-test">+ File</button>
+        <button type="button" id="cb-add-data-btn" class="btn btn-add-test">+ Data</button>
       </div>
     </section>
 
@@ -119,6 +121,51 @@
         Content (optional — leave empty to derive an export from the name)
         <textarea class="cb-file-content" rows="3" placeholder="Leave empty to auto-derive export const ... = {};"></textarea>
       </label>
+    </div>
+  </template>
+
+  <!-- Variable row inside a Data block: one `const` declaration. `type`
+       can name a custom type, in which case `importPath` produces a
+       named import for it — one per distinct (type, importPath) pair,
+       deduped by the generator. `value` is written verbatim, exactly as
+       typed (quotes and all), never interpreted. -->
+  <template id="cb-variable-row-template">
+    <div class="cb-variable-row" data-cb-variable-id="">
+      <select class="cb-variable-kind">
+        <option value="const">const</option>
+      </select>
+      <input type="text" class="cb-variable-name" placeholder="name">
+      <input type="text" class="cb-variable-type" placeholder="type (e.g. string)">
+      <input type="text" class="cb-variable-value" placeholder="value (e.g. 'hello')">
+      <input type="text" class="cb-variable-import-path" placeholder="import path (only for a custom type)">
+      <button type="button" class="btn btn-icon btn-remove-variable" title="Remove variable">&times;</button>
+    </div>
+  </template>
+
+  <!-- Data block: same name/path + naming-convention derivation as File,
+       plus zero-or-more variable rows. Each becomes a local `const`; all
+       of them land as shorthand properties on the one derived-name
+       export — that export object is the "barrel", bundling whatever
+       this file declares. Zero variables falls back to the same empty
+       `export const <name> = {};` as an empty File block. -->
+  <template id="cb-data-block-template">
+    <div class="cb-block cb-data-block" data-cb-block-id="">
+      <div class="cb-block-header">
+        <span class="cb-block-badge">Data</span>
+        <button type="button" class="btn btn-icon btn-remove-block" title="Remove data">&times;</button>
+      </div>
+      <div class="cb-field-row">
+        <label class="cb-field">
+          Name
+          <input type="text" class="cb-file-name" placeholder="e.g. user-fixture.data.ts">
+        </label>
+        <label class="cb-field">
+          Path
+          <input type="text" class="cb-file-path" placeholder="e.g. src/tests/fixtures">
+        </label>
+      </div>
+      <div class="cb-variables-list"></div>
+      <button type="button" class="btn btn-add-item cb-add-variable-btn">+ Variable</button>
     </div>
   </template>
 
@@ -301,6 +348,6 @@
        browsers don't keep serving a stale cached copy during development. -->
   <script src="script.js?v=30"></script>
   <script src="tabs.js?v=1"></script>
-  <script src="code-builder.js?v=2"></script>
+  <script src="code-builder.js?v=3"></script>
 </body>
 </html>
