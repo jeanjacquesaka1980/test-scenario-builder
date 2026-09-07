@@ -13,8 +13,19 @@
 // With zero variables it falls back to the same empty-object shape as an
 // empty `file` block. `value` is written verbatim (never eval'd) — the
 // author types the exact TS expression, quotes and all.
+//
+// Unlike `file`, a Data block's name is required to be <base>.data.ts —
+// the middle segment isn't free-form here, since this block type only
+// ever means "data".
 
 const { deriveConstName } = require('../naming-convention');
+
+function assertDataFileName(fileName) {
+  const parts = typeof fileName === 'string' ? fileName.split('.') : [];
+  if (parts.length !== 3 || parts[1] !== 'data' || parts[2] !== 'ts') {
+    throw new Error(`"${fileName}" must look like <base>.data.ts for a Data block`);
+  }
+}
 
 function assertValidVariable(variable, index) {
   if (!variable || variable.kind !== 'const') {
@@ -32,6 +43,7 @@ function assertValidVariable(variable, index) {
 }
 
 function generateContent(block) {
+  assertDataFileName(block.name);
   const constName = deriveConstName(block.name);
   const variables = Array.isArray(block.variables) ? block.variables : [];
 
