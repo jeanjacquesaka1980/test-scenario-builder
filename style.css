@@ -698,9 +698,16 @@ label {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   font-size: 13px;
   color: #444;
+}
+
+.yaml-app-details {
+  font-size: 12px;
+  color: #666;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  margin: 4px 0 12px 0;
 }
 
 .yaml-command-label {

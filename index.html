@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -64,14 +64,16 @@
          parseable YAML meant to feed that generator, it also gets a
          Download button, unlike the pseudo-JSON.
 
-         The YAML tab also picks a "target app" (see APP_CONFIGS in
-         script.js) — one choice that bundles three things that used to
-         be separate decisions: the fixture import path baked into the
-         generated file, the spec's own path (subfolder), and the
-         generator's --out directory. Picking it also produces a
-         ready-to-copy CLI command, since --out and the YAML's path are
-         two different flags/fields under the hood but shouldn't need to
-         be reasoned about separately. -->
+         The YAML tab also asks two independent things at export time:
+         which app (see APP_CONFIGS in script.js — fixes the fixture
+         import path baked into the generated file, and the generator's
+         --out directory) and where the spec file itself should go (a
+         plain relative path, since one app can hold many different spec
+         folders — never tied to the app choice). Both together produce
+         a ready-to-copy CLI command and a combined destination preview,
+         so --out and the YAML's own path never have to be reasoned
+         about as two disconnected things even though they are two
+         separate settings under the hood. -->
     <section class="export-section">
       <h2>Export</h2>
       <div class="export-tabs">
@@ -92,6 +94,7 @@
           <span id="yaml-app-label">Target app: <strong>Not set</strong></span>
           <button type="button" id="yaml-app-config-btn" class="btn">Set target app</button>
         </div>
+        <p id="yaml-destination-label" class="yaml-app-details"></p>
 
         <div class="export-buttons">
           <button type="button" id="copy-yaml-btn" class="btn">Copy to clipboard</button>
@@ -112,32 +115,34 @@
 
   </main>
 
-  <!-- Picks the "target app" for a YAML export — one choice standing in
-       for three separate settings (fixture import path, spec subfolder,
-       generator --out directory) that would otherwise have to be
-       reasoned about independently. Opens automatically the first time
-       Copy/Download is used in a session; "Set target app" reopens it to
-       change later. -->
+  <!-- Two independent settings for a YAML export, asked together since
+       both matter at export time, but never conflated:
+       - Which app: picks a FIXED entry from APP_CONFIGS (script.js) —
+         its fixtureImportPath (baked into the generated file's import)
+         and outDir (the generator's --out). No custom entry — one app
+         can have many different spec folders, so nothing here should
+         imply a 1:1 app-to-folder mapping.
+       - Spec folder: a plain, always-editable path, independent of which
+         app is picked, since one app can hold many different Playwright
+         spec folders. This is the YAML's own `path` field.
+       Opens automatically the first time Copy/Download is used in a
+       session; "Set target app" reopens it to change either later. -->
   <dialog id="yaml-export-config-dialog" class="confirm-dialog">
     <p>Which app is this scenario testing?</p>
     <label class="cb-field">
       App
       <select id="yaml-app-select"></select>
     </label>
-    <div id="yaml-app-custom-fields" hidden>
-      <label class="cb-field">
-        Fixture import path
-        <input type="text" id="yaml-app-custom-fixture" placeholder="e.g. apps/my-app/test-utils/fixtures">
-      </label>
-      <label class="cb-field">
-        --out directory
-        <input type="text" id="yaml-app-custom-outdir" placeholder="e.g. /Users/you/workspaces/my-app">
-      </label>
-      <label class="cb-field">
-        Spec path (subfolder inside --out)
-        <input type="text" id="yaml-app-custom-specpath" placeholder="e.g. src/tests">
-      </label>
-    </div>
+    <p id="yaml-app-details" class="yaml-app-details"></p>
+
+    <p>Where should this spec file go?</p>
+    <label class="cb-field">
+      Spec folder (relative path inside --out — e.g. src/tests/checkout)
+      <input type="text" id="yaml-spec-path-input" placeholder="e.g. src/tests/checkout">
+    </label>
+
+    <p id="yaml-destination-preview" class="yaml-app-details"></p>
+
     <div class="confirm-dialog-buttons">
       <button type="button" id="yaml-app-cancel-btn" class="btn">Cancel</button>
       <button type="button" id="yaml-app-confirm-btn" class="btn btn-danger">Set app</button>
@@ -427,7 +432,7 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=33"></script>
+  <script src="script.js?v=34"></script>
   <script src="tabs.js?v=1"></script>
   <script src="code-builder.js?v=6"></script>
 </body>

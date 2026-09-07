@@ -278,13 +278,13 @@ const yamlCopyFeedbackEl = document.getElementById('yaml-copy-feedback');
 const yamlCommandPreviewEl = document.getElementById('yaml-command-preview');
 const copyCommandBtn = document.getElementById('copy-command-btn');
 const yamlAppLabelEl = document.getElementById('yaml-app-label');
+const yamlDestinationLabelEl = document.getElementById('yaml-destination-label');
 const yamlAppConfigBtn = document.getElementById('yaml-app-config-btn');
 const yamlAppDialog = document.getElementById('yaml-export-config-dialog');
 const yamlAppSelect = document.getElementById('yaml-app-select');
-const yamlAppCustomFields = document.getElementById('yaml-app-custom-fields');
-const yamlAppCustomFixture = document.getElementById('yaml-app-custom-fixture');
-const yamlAppCustomOutDir = document.getElementById('yaml-app-custom-outdir');
-const yamlAppCustomSpecPath = document.getElementById('yaml-app-custom-specpath');
+const yamlAppDetailsEl = document.getElementById('yaml-app-details');
+const yamlSpecPathInput = document.getElementById('yaml-spec-path-input');
+const yamlDestinationPreviewEl = document.getElementById('yaml-destination-preview');
 const yamlAppCancelBtn = document.getElementById('yaml-app-cancel-btn');
 const yamlAppConfirmBtn = document.getElementById('yaml-app-confirm-btn');
 
@@ -1086,27 +1086,31 @@ function buildExportText() {
    code, so they don't go inside "describe" itself, same reasoning as the
    pseudo-JSON export.
 
-   `path`, the generated file's fixture import, and the generator's --out
-   directory used to be three things the user had to reason about
-   separately. They're now one choice — "which app is this testing?" —
-   via APP_CONFIGS below; picking one sets all three at once and produces
-   a ready-to-copy CLI command. EDIT APP_CONFIGS with your real apps.
+   Two independent settings feed a YAML export, asked together but never
+   conflated: which app (fixes the generated file's fixture import and
+   the generator's --out directory — via the FIXED list in APP_CONFIGS
+   below, no custom entry) and where the spec file itself goes (a plain
+   relative path, since one app can hold many different spec folders —
+   there's no such thing as "the" folder for an app). EDIT APP_CONFIGS
+   with your real apps.
    ========================================================================== */
 
-// EDIT THIS with your real apps. Each entry bundles everything a YAML
-// export needs to target that app: the fixture import path baked into
-// the generated file, the spec's own path (subfolder), and the
-// generator's --out directory (its project root on disk).
+// EDIT THIS with your real apps. Each entry fixes what a YAML export
+// needs FROM the app itself: the fixture import path baked into the
+// generated file, and the generator's --out directory (that app's
+// project root on disk). Deliberately does NOT include a spec folder —
+// one app can hold many different Playwright spec folders, so that's
+// always a separate, always-editable choice (see yamlSpecPath below).
 const APP_CONFIGS = [
   {
     name: 'Example app',
     fixtureImportPath: 'apps/example-app/test-utils/fixtures',
-    specPath: 'src/tests',
     outDir: '/absolute/path/to/example-app',
   },
 ];
 
 let yamlExportConfig = null; // null until the app dialog is confirmed once
+let yamlSpecPath = ''; // independent of yamlExportConfig — see APP_CONFIGS comment
 
 function isYamlSafeBare(str) {
   if (str === '') return false;
@@ -1162,7 +1166,7 @@ function pushSpecStepLines(lines, step, indent) {
 function buildYamlExportText() {
   const lines = ['blocks:', '  - type: spec'];
   lines.push(`    name: ${yamlScalar(`${slugify(scenario.scenarioName)}.spec.ts`)}`);
-  lines.push(`    path: ${yamlScalar(yamlExportConfig ? yamlExportConfig.specPath : '')}`);
+  lines.push(`    path: ${yamlScalar(yamlSpecPath)}`);
   lines.push(`    fixtureImportPath: ${yamlScalar(yamlExportConfig ? yamlExportConfig.fixtureImportPath : '')}`);
   lines.push(`    title: ${yamlScalar(scenario.scenarioName)}`);
   lines.push(`    description: ${yamlScalar(scenario.scenarioDescription)}`);
@@ -1247,14 +1251,29 @@ function populateYamlAppSelect() {
     option.textContent = app.name;
     yamlAppSelect.appendChild(option);
   });
-  const customOption = document.createElement('option');
-  customOption.value = 'custom';
-  customOption.textContent = 'Custom…';
-  yamlAppSelect.appendChild(customOption);
+}
+
+function formatAppDetails(app) {
+  return `Fixture import: ${app.fixtureImportPath}\n--out: ${app.outDir}`;
+}
+
+function formatDestination(app, specPath) {
+  const outDir = app ? app.outDir : '(no app set)';
+  const trimmedSpecPath = specPath.trim();
+  return trimmedSpecPath ? `${outDir}/${trimmedSpecPath}` : outDir;
 }
 
 function updateYamlAppLabel() {
   yamlAppLabelEl.innerHTML = `Target app: <strong>${yamlExportConfig ? yamlExportConfig.name : 'Not set'}</strong>`;
+  yamlDestinationLabelEl.textContent = yamlExportConfig ? `Files land in: ${formatDestination(yamlExportConfig, yamlSpecPath)}` : '';
+}
+
+// Live-updates the dialog's own destination preview as either field
+// changes, before anything is confirmed.
+function refreshYamlDialogPreview() {
+  const app = APP_CONFIGS[Number(yamlAppSelect.value)];
+  if (app) yamlAppDetailsEl.textContent = formatAppDetails(app);
+  yamlDestinationPreviewEl.textContent = `Files will be written to: ${formatDestination(app, yamlSpecPathInput.value)}`;
 }
 
 let pendingYamlAction = null; // 'copy' | 'download' | null, set right before opening the dialog
@@ -1264,18 +1283,13 @@ function openYamlAppDialog(action) {
 
   if (yamlExportConfig) {
     const presetIndex = APP_CONFIGS.indexOf(yamlExportConfig);
-    if (presetIndex !== -1) {
-      yamlAppSelect.value = String(presetIndex);
-      yamlAppCustomFields.hidden = true;
-    } else {
-      yamlAppSelect.value = 'custom';
-      yamlAppCustomFields.hidden = false;
-      yamlAppCustomFixture.value = yamlExportConfig.fixtureImportPath;
-      yamlAppCustomOutDir.value = yamlExportConfig.outDir;
-      yamlAppCustomSpecPath.value = yamlExportConfig.specPath;
-    }
+    yamlAppSelect.value = String(presetIndex === -1 ? 0 : presetIndex);
+  } else if (APP_CONFIGS.length > 0) {
+    yamlAppSelect.value = '0';
   }
+  yamlSpecPathInput.value = yamlSpecPath;
 
+  refreshYamlDialogPreview();
   yamlAppDialog.showModal();
 }
 
@@ -1380,9 +1394,8 @@ downloadYamlBtn.addEventListener('click', () => {
 yamlAppConfigBtn.addEventListener('click', () => openYamlAppDialog(null));
 copyCommandBtn.addEventListener('click', copyYamlCommand);
 
-yamlAppSelect.addEventListener('change', () => {
-  yamlAppCustomFields.hidden = yamlAppSelect.value !== 'custom';
-});
+yamlAppSelect.addEventListener('change', refreshYamlDialogPreview);
+yamlSpecPathInput.addEventListener('input', refreshYamlDialogPreview);
 
 yamlAppCancelBtn.addEventListener('click', () => {
   pendingYamlAction = null;
@@ -1390,16 +1403,8 @@ yamlAppCancelBtn.addEventListener('click', () => {
 });
 
 yamlAppConfirmBtn.addEventListener('click', () => {
-  if (yamlAppSelect.value === 'custom') {
-    yamlExportConfig = {
-      name: 'Custom',
-      fixtureImportPath: yamlAppCustomFixture.value.trim(),
-      specPath: yamlAppCustomSpecPath.value.trim(),
-      outDir: yamlAppCustomOutDir.value.trim(),
-    };
-  } else {
-    yamlExportConfig = APP_CONFIGS[Number(yamlAppSelect.value)];
-  }
+  yamlExportConfig = APP_CONFIGS[Number(yamlAppSelect.value)];
+  yamlSpecPath = yamlSpecPathInput.value.trim();
 
   updateYamlAppLabel();
   yamlAppDialog.close();
