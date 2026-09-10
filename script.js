@@ -33,6 +33,8 @@ const ACTIONS = [
   'assertDisabled',
   'toBeReadOnly',
   'toHaveExpectedCount',
+  'toBeContentEditable',
+  'toAcceptTypedInput',
   'customAssertion',
   'waitFor',
 ];
@@ -51,6 +53,8 @@ const ASSERTION_ACTION_NAMES = new Set([
   'assertDisabled',
   'toBeReadOnly',
   'toHaveExpectedCount',
+  'toBeContentEditable',
+  'toAcceptTypedInput',
   'customAssertion',
 ]);
 
@@ -88,6 +92,8 @@ const ACTION_FIELD_CONFIG = {
   assertDisabled: { target: true, selection: false, value: false },
   toBeReadOnly: { target: true, selection: false, value: false },
   toHaveExpectedCount: { target: true, selection: true, value: true },
+  toBeContentEditable: { target: true, selection: false, value: false },
+  toAcceptTypedInput: { target: true, selection: false, value: true },
   customAssertion: { target: true, selection: false, value: true },
   waitFor: { target: true, selection: false, value: false },
 };
