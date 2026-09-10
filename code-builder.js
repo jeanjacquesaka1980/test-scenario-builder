@@ -71,6 +71,7 @@
     const nameInput = blockEl.querySelector('.cb-file-name');
     const pathInput = blockEl.querySelector('.cb-file-path');
     const contentInput = blockEl.querySelector('.cb-file-content');
+    const duplicateBtn = blockEl.querySelector('.btn-duplicate-block');
     const removeBtn = blockEl.querySelector('.btn-remove-block');
 
     nameInput.value = block.name;
@@ -90,6 +91,7 @@
       renderPreview();
     });
 
+    duplicateBtn.addEventListener('click', () => duplicateBlock(block.id));
     removeBtn.addEventListener('click', () => removeBlock(block.id));
 
     cbBlocksById.set(block.id, { el: blockEl });
@@ -105,6 +107,54 @@
     if (refs) {
       refs.el.remove();
       cbBlocksById.delete(blockId);
+    }
+
+    renderPreview();
+  }
+
+  function cloneVariable(variable) {
+    return {
+      id: cbNextBlockId(),
+      kind: variable.kind,
+      name: variable.name,
+      type: variable.type,
+      value: variable.value,
+      importPath: variable.importPath,
+    };
+  }
+
+  function cloneCbBlock(block) {
+    if (block.type === 'data') {
+      return {
+        id: cbNextBlockId(),
+        type: 'data',
+        name: block.name,
+        path: block.path,
+        variables: block.variables.map(cloneVariable),
+      };
+    }
+    return { id: cbNextBlockId(), type: 'file', name: block.name, path: block.path, content: block.content };
+  }
+
+  function createBlockElementByType(block) {
+    return block.type === 'data' ? createDataBlockElement(block) : createFileBlockElement(block);
+  }
+
+  // Inserts a copy of the block right after it in cbState.blocks.
+  function duplicateBlock(blockId) {
+    const index = cbState.blocks.findIndex((b) => b.id === blockId);
+    if (index === -1) return;
+
+    const clone = cloneCbBlock(cbState.blocks[index]);
+    cbState.blocks.splice(index + 1, 0, clone);
+
+    const cloneEl = createBlockElementByType(clone);
+    const originalEl = cbBlocksById.get(blockId).el;
+    const nextSibling = originalEl.nextElementSibling;
+    if (nextSibling) {
+      cbBlocksListEl.insertBefore(cloneEl, nextSibling);
+    } else {
+      cbBlocksListEl.appendChild(cloneEl);
     }
 
     renderPreview();
@@ -173,6 +223,7 @@
 
     const nameInput = blockEl.querySelector('.cb-file-name');
     const pathInput = blockEl.querySelector('.cb-file-path');
+    const duplicateBtn = blockEl.querySelector('.btn-duplicate-block');
     const removeBtn = blockEl.querySelector('.btn-remove-block');
     const variablesListEl = blockEl.querySelector('.cb-variables-list');
     const addVariableBtn = blockEl.querySelector('.cb-add-variable-btn');
@@ -189,6 +240,7 @@
       renderPreview();
     });
 
+    duplicateBtn.addEventListener('click', () => duplicateBlock(block.id));
     removeBtn.addEventListener('click', () => removeBlock(block.id));
 
     for (const variable of block.variables) {
