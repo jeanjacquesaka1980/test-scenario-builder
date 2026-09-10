@@ -573,6 +573,20 @@ label {
   gap: 4px;
 }
 
+.btn-duplicate-block,
+.btn-duplicate-test {
+  padding: 5px 9px;
+  font-size: 12px;
+  color: #1a5fb4;
+  border-color: #a9c6ea;
+  flex: 0 0 auto;
+}
+
+.btn-duplicate-block:hover,
+.btn-duplicate-test:hover {
+  background: #eaf1fb;
+}
+
 /* Small text-link toggle for the optional note on a block/test — never a
    boxed button, since most blocks won't have one. */
 .btn-note-toggle {

@@ -31,15 +31,39 @@ const ACTIONS = [
   'assertCount',
   'assertEnabled',
   'assertDisabled',
+  'toBeReadOnly',
+  'toHaveExpectedCount',
+  'toBeContentEditable',
+  'toAcceptTypedInput',
+  'customAssertion',
   'waitFor',
 ];
 
+// Which ACTIONS entries are assertions — explicit membership rather than
+// an "assert" prefix check, since toBeReadOnly/toHaveExpectedCount/
+// customAssertion are assertions too but don't follow that prefix.
+const ASSERTION_ACTION_NAMES = new Set([
+  'assertVisible',
+  'assertHidden',
+  'assertText',
+  'assertValue',
+  'assertChecked',
+  'assertCount',
+  'assertEnabled',
+  'assertDisabled',
+  'toBeReadOnly',
+  'toHaveExpectedCount',
+  'toBeContentEditable',
+  'toAcceptTypedInput',
+  'customAssertion',
+]);
+
 // Actions allowed inside an Assertion — only assertions belong there.
-const ASSERTION_ACTIONS = ACTIONS.filter((action) => action.startsWith('assert'));
+const ASSERTION_ACTIONS = ACTIONS.filter((action) => ASSERTION_ACTION_NAMES.has(action));
 
 // Actions allowed inside an Action (or a shared "Before Each") — the
 // complement of the above, so it can never hold an assertion.
-const REGULAR_ACTIONS = ACTIONS.filter((action) => !action.startsWith('assert'));
+const REGULAR_ACTIONS = ACTIONS.filter((action) => !ASSERTION_ACTION_NAMES.has(action));
 
 // Per-action lookup of which of (target, selection, value) apply.
 // Any action missing from this map falls back to DEFAULT_FIELD_CONFIG below.
@@ -66,6 +90,11 @@ const ACTION_FIELD_CONFIG = {
   assertCount: { target: true, selection: true, value: true },
   assertEnabled: { target: true, selection: false, value: false },
   assertDisabled: { target: true, selection: false, value: false },
+  toBeReadOnly: { target: true, selection: false, value: false },
+  toHaveExpectedCount: { target: true, selection: true, value: true },
+  toBeContentEditable: { target: true, selection: false, value: false },
+  toAcceptTypedInput: { target: true, selection: false, value: true },
+  customAssertion: { target: true, selection: false, value: true },
   waitFor: { target: true, selection: false, value: false },
 };
 
@@ -569,6 +598,7 @@ function createBlockElement(block) {
   const titleInput = blockEl.querySelector('.block-title-input');
   const listEl = blockEl.querySelector('.block-steps-list');
   const addItemBtn = blockEl.querySelector('.btn-add-item');
+  const duplicateBtn = blockEl.querySelector('.btn-duplicate-block');
   const moveUpBtn = blockEl.querySelector('.btn-move-up');
   const moveDownBtn = blockEl.querySelector('.btn-move-down');
   const removeBtn = blockEl.querySelector('.btn-remove-block');
@@ -583,6 +613,11 @@ function createBlockElement(block) {
 
   addItemBtn.addEventListener('click', () => addItemToBlock(block, { focus: true }));
 
+  // Duplicating is always available, even on a fixed piece — it's how you
+  // grow past a scaffold's starting shape. The copy itself is always
+  // removable, regardless of the original.
+  duplicateBtn.addEventListener('click', () => duplicateBlock(block.id));
+
   if (block.removable === false) {
     moveUpBtn.hidden = true;
     moveDownBtn.hidden = true;
@@ -594,7 +629,24 @@ function createBlockElement(block) {
   }
 
   blocksById.set(block.id, { el: blockEl, listEl, numberEl });
+  renderBlockLeaves(block, listEl);
   return blockEl;
+}
+
+// Renders whatever leaf rows a block already has (a duplicated block, or
+// any future caller that constructs one pre-populated) — a no-op for the
+// usual case of a brand-new block starting with actions: [].
+function renderBlockLeaves(block, listEl) {
+  const actionsList = blockActionsList(block);
+  for (const step of block.actions) {
+    const rowEl = createRowElement(step, {
+      actionsList,
+      isLastRow: () => block.actions[block.actions.length - 1] === step,
+      onEnterAdd: () => addItemToBlock(block, { focus: true }),
+    });
+    listEl.appendChild(rowEl);
+  }
+  renumberSteps(block.actions);
 }
 
 function removeBlock(blockId) {
@@ -612,6 +664,51 @@ function removeBlock(blockId) {
   if (refs) {
     refs.el.remove();
     blocksById.delete(blockId);
+  }
+
+  container.renumber();
+  updateJsonPreview();
+}
+
+function cloneLeaf(leaf, kind) {
+  return {
+    id: kind === 'assertion' ? nextAssertionId() : nextActionId(),
+    action: leaf.action,
+    target: leaf.target,
+    selection: leaf.selection,
+    value: leaf.value,
+    note: leaf.note,
+  };
+}
+
+function cloneGroup(group) {
+  return {
+    id: nextBlockId(),
+    kind: group.kind,
+    title: group.title,
+    note: group.note,
+    actions: group.actions.map((leaf) => cloneLeaf(leaf, group.kind)),
+    removable: true,
+  };
+}
+
+// Inserts a copy of the block right after it, in the same array/list it
+// already lives in (a test's steps, or the shared beforeEach) — works on
+// both since findBlockContainer already treats them the same way.
+function duplicateBlock(blockId) {
+  const container = findBlockContainer(blockId);
+  if (!container) return;
+  const { array, index, listEl } = container;
+
+  const clone = cloneGroup(array[index]);
+  array.splice(index + 1, 0, clone);
+
+  const cloneEl = createBlockElement(clone);
+  const nextSibling = listEl.children[index + 1];
+  if (nextSibling) {
+    listEl.insertBefore(cloneEl, nextSibling);
+  } else {
+    listEl.appendChild(cloneEl);
   }
 
   container.renumber();
@@ -685,6 +782,7 @@ function createTestElement(test) {
   blockEl.dataset.testId = test.id;
 
   const titleInput = blockEl.querySelector('.test-title-input');
+  const duplicateBtn = blockEl.querySelector('.btn-duplicate-test');
   const removeBtn = blockEl.querySelector('.btn-remove-test');
   const listEl = blockEl.querySelector('.test-steps-list');
   const addActionBtn = blockEl.querySelector('.btn-add-action-block');
@@ -697,6 +795,10 @@ function createTestElement(test) {
   });
 
   wireNoteToggle(blockEl, test, '.btn-note-toggle', '.test-note-input');
+
+  // Always available, even on a fixed test — the copy is always
+  // removable, regardless of the original.
+  duplicateBtn.addEventListener('click', () => duplicateTest(test.id));
 
   if (test.removable) {
     removeBtn.addEventListener('click', () => removeTest(test.id));
@@ -742,6 +844,38 @@ function createTestElement(test) {
   });
 
   return blockEl;
+}
+
+function cloneTest(test) {
+  return {
+    id: nextTestId(),
+    title: test.title,
+    note: test.note,
+    steps: test.steps.map(cloneGroup),
+    removable: true,
+  };
+}
+
+// Inserts a copy of the test right after it in scenario.tests — always
+// removable, regardless of whether the original was a fixed scaffold
+// test.
+function duplicateTest(testId) {
+  const index = scenario.tests.findIndex((t) => t.id === testId);
+  if (index === -1) return;
+
+  const clone = cloneTest(scenario.tests[index]);
+  scenario.tests.splice(index + 1, 0, clone);
+
+  const cloneEl = createTestElement(clone);
+  const originalEl = testsById.get(testId).el;
+  const nextSibling = originalEl.nextElementSibling;
+  if (nextSibling) {
+    sharedStepsListEl.insertBefore(cloneEl, nextSibling);
+  } else {
+    sharedStepsListEl.appendChild(cloneEl);
+  }
+
+  updateJsonPreview();
 }
 
 function removeTest(testId) {
