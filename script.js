@@ -31,15 +31,35 @@ const ACTIONS = [
   'assertCount',
   'assertEnabled',
   'assertDisabled',
+  'toBeReadOnly',
+  'toHaveExpectedCount',
+  'customAssertion',
   'waitFor',
 ];
 
+// Which ACTIONS entries are assertions — explicit membership rather than
+// an "assert" prefix check, since toBeReadOnly/toHaveExpectedCount/
+// customAssertion are assertions too but don't follow that prefix.
+const ASSERTION_ACTION_NAMES = new Set([
+  'assertVisible',
+  'assertHidden',
+  'assertText',
+  'assertValue',
+  'assertChecked',
+  'assertCount',
+  'assertEnabled',
+  'assertDisabled',
+  'toBeReadOnly',
+  'toHaveExpectedCount',
+  'customAssertion',
+]);
+
 // Actions allowed inside an Assertion — only assertions belong there.
-const ASSERTION_ACTIONS = ACTIONS.filter((action) => action.startsWith('assert'));
+const ASSERTION_ACTIONS = ACTIONS.filter((action) => ASSERTION_ACTION_NAMES.has(action));
 
 // Actions allowed inside an Action (or a shared "Before Each") — the
 // complement of the above, so it can never hold an assertion.
-const REGULAR_ACTIONS = ACTIONS.filter((action) => !action.startsWith('assert'));
+const REGULAR_ACTIONS = ACTIONS.filter((action) => !ASSERTION_ACTION_NAMES.has(action));
 
 // Per-action lookup of which of (target, selection, value) apply.
 // Any action missing from this map falls back to DEFAULT_FIELD_CONFIG below.
@@ -66,6 +86,9 @@ const ACTION_FIELD_CONFIG = {
   assertCount: { target: true, selection: true, value: true },
   assertEnabled: { target: true, selection: false, value: false },
   assertDisabled: { target: true, selection: false, value: false },
+  toBeReadOnly: { target: true, selection: false, value: false },
+  toHaveExpectedCount: { target: true, selection: true, value: true },
+  customAssertion: { target: true, selection: false, value: true },
   waitFor: { target: true, selection: false, value: false },
 };
 
