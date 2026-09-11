@@ -1275,12 +1275,15 @@ function slugify(text) {
 function groupsToSpecSteps(groups) {
   return groups.map((group, index) => {
     const fallbackTitle = `${group.kind === 'assertion' ? 'Assertion' : 'Action'} ${index + 1}`;
-    return { title: group.title.trim() || fallbackTitle, actions: group.actions };
+    return { title: group.title.trim() || fallbackTitle, note: group.note, actions: group.actions };
   });
 }
 
 function pushSpecStepLines(lines, step, indent) {
   lines.push(`${indent}- title: ${yamlScalar(step.title)}`);
+  if (step.note && step.note.trim() !== '') {
+    lines.push(`${indent}  note: ${yamlScalar(step.note)}`);
+  }
   if (step.actions.length === 0) {
     lines.push(`${indent}  actions: []`);
     return;
@@ -1334,6 +1337,9 @@ function buildYamlExportText() {
     scenario.tests.forEach((test, testIndex) => {
       const testTitle = test.title.trim() || `Test ${testIndex + 1}`;
       lines.push(`      - title: ${yamlScalar(testTitle)}`);
+      if (test.note && test.note.trim() !== '') {
+        lines.push(`        note: ${yamlScalar(test.note)}`);
+      }
       const steps = groupsToSpecSteps(test.steps);
       if (steps.length === 0) {
         lines.push('        steps: []');
