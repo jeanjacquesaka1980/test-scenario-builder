@@ -10,13 +10,15 @@
 //
 // A step's own body stays empty by design — no real action/target/
 // locator translation happens here, that's a human's (or an AI agent's)
-// job, not this generator's. What a step CAN optionally carry is a raw
-// `actions` list (from the Test Scenario Builder's YAML export, never
-// from a spec block authored directly in the Test Code Builder tab,
-// which is title-only) — each one rendered as a single raw comment line
-// inside the step body, fields joined as-is, no interpretation:
+// job, not this generator's. What a step (and a test) CAN optionally
+// carry is a `note` (rendered as its own comment line, first thing in the
+// body) and — steps only — a raw `actions` list (from the Test Scenario
+// Builder's YAML export, never from a spec block authored directly in
+// the Test Code Builder tab, which is title-only) — each one rendered as
+// a single raw comment line, fields joined as-is, no interpretation:
 //
 //   step("Fill and submit", async () => {
+//     // note: only needed when already logged out
 //     // click, submitButton
 //     // type, nameInput, John
 //   });
@@ -107,6 +109,9 @@ function buildHeaderComment(block) {
 
 function emitStep(step, indent) {
   const lines = [`${indent}step(${JSON.stringify(step.title)}, async () => {`];
+  if (typeof step.note === 'string' && step.note.trim() !== '') {
+    lines.push(`${indent}  // note: ${step.note}`);
+  }
   const actions = Array.isArray(step.actions) ? step.actions : [];
   actions.forEach((action) => {
     lines.push(`${indent}  ${formatActionComment(action)}`);
@@ -169,6 +174,9 @@ function generateContent(block) {
 
   tests.forEach((testEntry) => {
     lines.push(`  test(${JSON.stringify(testEntry.title)}, async () => {`);
+    if (typeof testEntry.note === 'string' && testEntry.note.trim() !== '') {
+      lines.push(`    // note: ${testEntry.note}`);
+    }
     for (const step of testEntry.steps) {
       lines.push(emitStep(step, '    '));
     }
