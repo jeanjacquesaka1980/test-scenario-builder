@@ -41,33 +41,6 @@ body {
   border-color: #b3261e;
 }
 
-.app-tabs {
-  display: flex;
-  gap: 4px;
-  background: #1a1d21;
-  padding: 0 24px;
-}
-
-.app-tab-btn {
-  cursor: pointer;
-  border: none;
-  border-bottom: 3px solid transparent;
-  background: none;
-  color: #b6b9bd;
-  padding: 10px 14px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.app-tab-btn:hover {
-  color: #fff;
-}
-
-.app-tab-btn-active {
-  color: #fff;
-  border-bottom-color: #4c8dff;
-}
-
 .app-main {
   max-width: 1100px;
   margin: 0 auto;
@@ -172,6 +145,11 @@ label {
 .field-action {
   flex: 0 0 160px;
   font-weight: 500;
+}
+
+.field-custom-name {
+  flex: 1 1 180px;
+  min-width: 140px;
 }
 
 .field-target {
@@ -657,8 +635,7 @@ label {
   background: #fef3e2;
 }
 
-.btn-remove-block,
-.btn-remove-variable {
+.btn-remove-block {
   color: #b3261e;
   border-color: #e3b3b0;
 }
@@ -715,155 +692,91 @@ label {
 }
 
 /* ==========================================================================
-   Test Code Builder — namespaced under .cb- so nothing here can collide
-   with the Test Scenario Builder's own styles.
+   Endpoints and mocks
    ========================================================================== */
 
-.cb-blocks-section {
+.mocks-section {
   padding: 16px;
 }
 
-.cb-blocks-list {
+.mocks-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-bottom: 12px;
 }
 
-.cb-block {
+.mocks-list:empty {
+  margin-bottom: 0;
+}
+
+.mock-block {
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
+  background: #f8fafc;
   padding: 10px 12px;
 }
 
-.cb-file-block,
-.cb-data-block {
-  border: 1px solid #cbb8f0;
-  background: #f9f6ff;
-}
-
-.cb-block-header {
+.mock-block-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
-.cb-block-badge {
+.mock-block-badge {
   flex: 0 0 auto;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #6d28d9;
-  background: #ede9fe;
+  color: #475569;
+  background: #e2e8f0;
   border-radius: 4px;
   padding: 3px 7px;
 }
 
-/* The Data block's badge is a literal file-name suffix (data.ts), not a
-   generic label like File's — keep it lowercase, not uppercased. */
-.cb-data-block .cb-block-badge {
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-.cb-block-header .btn-remove-block {
-  margin-left: auto;
-}
-
-.cb-field-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.cb-field {
-  flex: 1 1 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #555;
-}
-
-.cb-field input,
-.cb-field textarea {
-  padding: 7px 9px;
-  border: 1px solid #cfd3d9;
+.mock-endpoint {
+  flex: 1 1 auto;
+  min-width: 120px;
+  padding: 6px 9px;
+  border: 1px solid #cbd5e1;
   border-radius: 4px;
   font-size: 14px;
-  font-family: inherit;
   background: #fff;
   color: #1a1d21;
-  font-weight: 400;
 }
 
-.cb-content-field {
-  margin-bottom: 10px;
+.mock-method {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  color: #1a1d21;
 }
 
-.cb-content-field textarea {
+.mock-data {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  background: #fff;
+  color: #1a1d21;
   resize: vertical;
 }
 
-.cb-variables-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
+.btn-remove-mock {
+  color: #b3261e;
+  border-color: #e3b3b0;
 }
 
-.cb-variables-list:empty {
-  margin-bottom: 0;
-}
-
-.cb-variable-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  background: #fff;
-  border: 1px solid #ded8f7;
-  border-radius: 4px;
-  padding: 6px;
-}
-
-.cb-variable-row select,
-.cb-variable-row input {
-  padding: 6px 8px;
-  border: 1px solid #cfd3d9;
-  border-radius: 4px;
-  font-size: 13px;
-  font-family: inherit;
-  background: #fff;
-  color: #1a1d21;
-}
-
-.cb-variable-kind {
-  flex: 0 0 80px;
-}
-
-.cb-variable-name {
-  flex: 1 1 100px;
-}
-
-.cb-variable-type {
-  flex: 1 1 120px;
-}
-
-.cb-variable-value {
-  flex: 1 1 140px;
-}
-
-.cb-variable-import-path {
-  flex: 1 1 180px;
-}
-
-.cb-variable-row .btn-remove-variable {
-  flex: 0 0 auto;
-  margin-left: auto;
+.btn-remove-mock:hover {
+  background: #fbeceb;
 }
 
 /* ==========================================================================
@@ -877,6 +790,7 @@ label {
   }
 
   .field-action,
+  .field-custom-name,
   .field-target,
   .field-selection,
   .field-value {

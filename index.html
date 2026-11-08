@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
 
@@ -13,16 +13,7 @@
     <button type="button" id="clear-all-btn" class="btn btn-clear-all">Clear all</button>
   </header>
 
-  <!-- Two fully decoupled tools sharing only this shell — the Test Code
-       Builder (script: code-builder.js) has its own data model, own
-       templates, own generator, and knows nothing about the Test Scenario
-       Builder (script: script.js) or vice versa. -->
-  <nav class="app-tabs">
-    <button type="button" id="tab-btn-scenario" class="app-tab-btn app-tab-btn-active">Test Scenario Builder</button>
-    <button type="button" id="tab-btn-code" class="app-tab-btn">Test Code Builder</button>
-  </nav>
-
-  <main class="app-main" id="tab-panel-scenario">
+  <main class="app-main">
 
     <!-- Scenario name -->
     <section class="scenario-name-section">
@@ -31,6 +22,18 @@
 
       <label for="scenario-description">Description</label>
       <textarea id="scenario-description" rows="2" placeholder="What this scenario covers"></textarea>
+    </section>
+
+    <!-- Endpoints and mocked data the scenario relies on. Optional and
+         independent of Test/Tests mode, so it's always here. Metadata for
+         the agent (Arrange, not Act/Assert), so it exports outside
+         "describe", next to loginAndNavigation. -->
+    <section class="mocks-section">
+      <h2>Endpoints and mocks</h2>
+      <div id="mocks-list" class="mocks-list"></div>
+      <div class="list-controls">
+        <button type="button" id="add-mock-btn" class="btn btn-add-test">+ Mock</button>
+      </div>
     </section>
 
     <!-- Enforces Act + Assert only (Arrange is left to the agent that reads
@@ -80,110 +83,6 @@
 
   </main>
 
-  <!-- Test Code Builder: a second, fully decoupled tool. Pure authoring
-       UI — it assembles blocks and exports a .yaml file, nothing more. It
-       has no filesystem access and does not generate TypeScript; that
-       happens in a separate Node CLI (generator/generate.js, one module
-       per block type under generator/blocks/) run inside the target
-       project, which reads this YAML, validates paths, and writes real
-       files. File and data blocks only. -->
-  <main class="app-main" id="tab-panel-code" hidden>
-
-    <section class="cb-blocks-section">
-      <div id="cb-blocks-list" class="cb-blocks-list"></div>
-      <div class="list-controls">
-        <button type="button" id="cb-add-file-btn" class="btn btn-add-test">+ File</button>
-        <button type="button" id="cb-add-data-btn" class="btn btn-add-test">+ data.ts</button>
-      </div>
-    </section>
-
-    <section class="export-section">
-      <h2>Export</h2>
-      <div class="export-buttons">
-        <button type="button" id="cb-copy-btn" class="btn">Copy to clipboard</button>
-        <button type="button" id="cb-download-btn" class="btn">Download YAML</button>
-        <span id="cb-copy-feedback" class="copy-feedback" aria-live="polite"></span>
-      </div>
-      <pre id="cb-preview" class="json-preview"></pre>
-    </section>
-
-  </main>
-
-  <!-- File block: `name` + `path` locate the output file; `content`, if
-       given, is written verbatim — otherwise the target project's
-       generator derives `export const <name> = {};` from the file name
-       (naming-convention rule lives in generator/generate.js, not here —
-       this tab only captures the raw fields). -->
-  <template id="cb-file-block-template">
-    <div class="cb-block cb-file-block" data-cb-block-id="">
-      <div class="cb-block-header">
-        <span class="cb-block-badge">File</span>
-        <button type="button" class="btn btn-duplicate-block">Duplicate</button>
-        <button type="button" class="btn btn-icon btn-remove-block" title="Remove file">&times;</button>
-      </div>
-      <div class="cb-field-row">
-        <label class="cb-field">
-          Name
-          <input type="text" class="cb-file-name" placeholder="e.g. no-data-shown.data.ts">
-        </label>
-        <label class="cb-field">
-          Path
-          <input type="text" class="cb-file-path" placeholder="e.g. src/tests/fixtures">
-        </label>
-      </div>
-      <label class="cb-field cb-content-field">
-        Content (optional — leave empty to derive an export from the name)
-        <textarea class="cb-file-content" rows="3" placeholder="Leave empty to auto-derive export const ... = {};"></textarea>
-      </label>
-    </div>
-  </template>
-
-  <!-- Variable row inside a Data block: one `const` declaration. `type`
-       can name a custom type, in which case `importPath` produces a
-       named import for it — one per distinct (type, importPath) pair,
-       deduped by the generator. `value` is written verbatim, exactly as
-       typed (quotes and all), never interpreted. -->
-  <template id="cb-variable-row-template">
-    <div class="cb-variable-row" data-cb-variable-id="">
-      <select class="cb-variable-kind">
-        <option value="const">const</option>
-      </select>
-      <input type="text" class="cb-variable-name" placeholder="name">
-      <input type="text" class="cb-variable-type" placeholder="type (e.g. string)">
-      <input type="text" class="cb-variable-value" placeholder="value (e.g. 'hello')">
-      <input type="text" class="cb-variable-import-path" placeholder="import path (only for a custom type)">
-      <button type="button" class="btn btn-icon btn-remove-variable" title="Remove variable">&times;</button>
-    </div>
-  </template>
-
-  <!-- Data block: same name/path + naming-convention derivation as File,
-       plus zero-or-more variable rows. Each becomes a local `const`; all
-       of them land as shorthand properties on the one derived-name
-       export — that export object is the "barrel", bundling whatever
-       this file declares. Zero variables falls back to the same empty
-       `export const <name> = {};` as an empty File block. -->
-  <template id="cb-data-block-template">
-    <div class="cb-block cb-data-block" data-cb-block-id="">
-      <div class="cb-block-header">
-        <span class="cb-block-badge">data.ts</span>
-        <button type="button" class="btn btn-duplicate-block">Duplicate</button>
-        <button type="button" class="btn btn-icon btn-remove-block" title="Remove data">&times;</button>
-      </div>
-      <div class="cb-field-row">
-        <label class="cb-field">
-          Name
-          <input type="text" class="cb-file-name" placeholder="e.g. user-fixture.data.ts">
-        </label>
-        <label class="cb-field">
-          Path
-          <input type="text" class="cb-file-path" placeholder="e.g. src/tests/fixtures">
-        </label>
-      </div>
-      <div class="cb-variables-list"></div>
-      <button type="button" class="btn btn-add-item cb-add-variable-btn">+ Variable</button>
-    </div>
-  </template>
-
   <!-- Confirmation dialog for "Clear all". A native <dialog> instead of
        window.confirm() so it renders reliably in every embedding context. -->
   <dialog id="clear-confirm-dialog" class="confirm-dialog">
@@ -204,6 +103,21 @@
     </div>
   </dialog>
 
+  <!-- Mock: one endpoint, the HTTP method it answers, and the data it
+       returns (free text — usually a JSON body, written as-is). -->
+  <template id="mock-block-template">
+    <div class="mock-block" data-mock-id="">
+      <div class="mock-block-header">
+        <span class="mock-block-badge">Mock</span>
+        <input type="text" class="mock-endpoint" placeholder="Endpoint (e.g. /api/cart)">
+        <select class="mock-method"></select>
+        <button type="button" class="btn btn-duplicate-mock">Duplicate</button>
+        <button type="button" class="btn btn-icon btn-remove-mock" title="Remove mock">&times;</button>
+      </div>
+      <textarea class="mock-data" rows="3" placeholder="Mocked data (e.g. {&quot;items&quot;: []})"></textarea>
+    </div>
+  </template>
+
   <!-- Row template, cloned by JS for each leaf action/assertion. Carries
        its own small "note" toggle, same as a block/test, so a note can be
        pinned to one specific step rather than the group as a whole. -->
@@ -213,6 +127,8 @@
         <span class="step-number"></span>
 
         <select class="field field-action" data-field="action"></select>
+
+        <input type="text" class="field field-custom-name" data-field="custom-name" placeholder="name" hidden>
 
         <input type="text" class="field field-target" data-field="target" placeholder="target (e.g. #submit-button)">
 
@@ -364,8 +280,6 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=41"></script>
-  <script src="tabs.js?v=1"></script>
-  <script src="code-builder.js?v=7"></script>
+  <script src="script.js?v=42"></script>
 </body>
 </html>

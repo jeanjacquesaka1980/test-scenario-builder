@@ -37,6 +37,7 @@ const ACTIONS = [
   'toAcceptTypedInput',
   'customAssertion',
   'waitFor',
+  'customAction',
 ];
 
 // Which ACTIONS entries are assertions — explicit membership rather than
@@ -94,8 +95,9 @@ const ACTION_FIELD_CONFIG = {
   toHaveExpectedCount: { target: true, selection: true, value: true },
   toBeContentEditable: { target: true, selection: false, value: false },
   toAcceptTypedInput: { target: true, selection: false, value: true },
-  customAssertion: { target: true, selection: false, value: true },
+  customAssertion: { target: true, selection: false, value: true, customName: true },
   waitFor: { target: true, selection: false, value: false },
+  customAction: { target: true, selection: false, value: true, customName: true },
 };
 
 // Used for any action not present in ACTION_FIELD_CONFIG (safety net for
@@ -177,6 +179,7 @@ const scenario = {
   scenarioDescription: '',
   mode: null, // null | 'test' | 'tests'
   loginAndNavigation: null, // null, or { userType, unit, navigationFlow } — set once, fixed, alongside the first Test/Tests scaffold
+  mocks: [], // { id, endpoint, method, data } — optional, independent of mode
   beforeEach: null,
   tests: [],
 };
@@ -199,6 +202,12 @@ function nextTestId() {
   return `test-${testIdCounter}`;
 }
 
+let mockIdCounter = 0;
+function nextMockId() {
+  mockIdCounter += 1;
+  return `mock-${mockIdCounter}`;
+}
+
 let blockIdCounter = 0;
 function nextBlockId() {
   blockIdCounter += 1;
@@ -212,6 +221,7 @@ function blockActionsList(block) {
 const rowsById = new Map(); // leaf row id -> { el, stepNumberEl, actionSelect, targetInput, selectionSelect, valueInput }
 const testsById = new Map(); // test id -> { el, titleInput, listEl }
 const blocksById = new Map(); // group/beforeEach id -> { el, listEl, numberEl }
+const mocksById = new Map(); // mock id -> { el, endpointInput }
 
 // Locate which flat leaf list a step belongs to — a group's `.actions`,
 // whether the group lives under beforeEach or inside a test — along with
@@ -300,6 +310,9 @@ const downloadSnapshotBtn = document.getElementById('download-snapshot-btn');
 const uploadSnapshotBtn = document.getElementById('upload-snapshot-btn');
 const snapshotFileInput = document.getElementById('snapshot-file-input');
 const snapshotFeedbackEl = document.getElementById('snapshot-feedback');
+const mocksListEl = document.getElementById('mocks-list');
+const addMockBtn = document.getElementById('add-mock-btn');
+const mockTemplate = document.getElementById('mock-block-template');
 
 // Set once the beforeEach container is created (mode 'tests' only) — the
 // DOM list the shared beforeEach groups render into.
@@ -332,6 +345,9 @@ function applyFieldVisibility(refs, action) {
   refs.targetInput.hidden = !config.target;
   refs.selectionSelect.hidden = !config.selection;
   refs.valueInput.hidden = !config.value;
+  refs.customNameInput.hidden = !config.customName;
+  refs.customNameInput.placeholder =
+    action === 'customAssertion' ? 'assertion name (e.g. toHaveValidTotal)' : 'action name (e.g. clickWithRetry)';
 }
 
 // Create a DOM row for one leaf action/assertion inside a group (or the
@@ -345,6 +361,7 @@ function createRowElement(step, context) {
 
   const stepNumberEl = rowEl.querySelector('.step-number');
   const actionSelect = rowEl.querySelector('.field-action');
+  const customNameInput = rowEl.querySelector('.field-custom-name');
   const targetInput = rowEl.querySelector('.field-target');
   const selectionSelect = rowEl.querySelector('.field-selection');
   const valueInput = rowEl.querySelector('.field-value');
@@ -354,6 +371,7 @@ function createRowElement(step, context) {
 
   buildActionOptions(actionSelect, context.actionsList);
   actionSelect.value = step.action;
+  customNameInput.value = step.customName;
   targetInput.value = step.target;
   selectionSelect.value = step.selection || 'single';
   valueInput.value = step.value;
@@ -362,6 +380,7 @@ function createRowElement(step, context) {
     el: rowEl,
     stepNumberEl,
     actionSelect,
+    customNameInput,
     targetInput,
     selectionSelect,
     valueInput,
@@ -386,7 +405,13 @@ function createRowElement(step, context) {
       selectionSelect.value = 'single';
     }
     if (!config.value) { step.value = ''; valueInput.value = ''; }
+    if (!config.customName) { step.customName = ''; customNameInput.value = ''; }
     applyFieldVisibility(refs, step.action);
+    updateJsonPreview();
+  });
+
+  customNameInput.addEventListener('input', () => {
+    step.customName = customNameInput.value;
     updateJsonPreview();
   });
 
@@ -407,7 +432,7 @@ function createRowElement(step, context) {
 
   // Enter key in any field of the LAST row in this group adds another row
   // to the same group (per spec).
-  for (const field of [targetInput, valueInput, actionSelect, selectionSelect]) {
+  for (const field of [customNameInput, targetInput, valueInput, actionSelect, selectionSelect]) {
     field.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       if (!context.isLastRow()) return;
@@ -514,6 +539,7 @@ function addItemToBlock(block, { focus = false } = {}) {
   const step = {
     id: block.kind === 'assertion' ? nextAssertionId() : nextActionId(),
     action: initialAction,
+    customName: '',
     target: '',
     selection: config.selection ? 'single' : null,
     value: '',
@@ -653,6 +679,7 @@ function cloneLeaf(leaf, kind) {
   return {
     id: kind === 'assertion' ? nextAssertionId() : nextActionId(),
     action: leaf.action,
+    customName: leaf.customName,
     target: leaf.target,
     selection: leaf.selection,
     value: leaf.value,
@@ -939,6 +966,99 @@ function removeBeforeEach() {
 }
 
 /* ==========================================================================
+   MOCKS (endpoint + method + mocked data)
+   Optional, repeatable, independent of Test/Tests mode — so unlike the
+   Login and Navigation block it isn't reset by a mode switch, only by
+   Clear all or a load.
+   ========================================================================== */
+
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
+function createMock() {
+  return { id: nextMockId(), endpoint: '', method: 'GET', data: '' };
+}
+
+function createMockElement(mock) {
+  const fragment = mockTemplate.content.cloneNode(true);
+  const blockEl = fragment.querySelector('.mock-block');
+  blockEl.dataset.mockId = mock.id;
+
+  const endpointInput = blockEl.querySelector('.mock-endpoint');
+  const methodSelect = blockEl.querySelector('.mock-method');
+  const dataInput = blockEl.querySelector('.mock-data');
+  const duplicateBtn = blockEl.querySelector('.btn-duplicate-mock');
+  const removeBtn = blockEl.querySelector('.btn-remove-mock');
+
+  for (const method of HTTP_METHODS) {
+    const option = document.createElement('option');
+    option.value = method;
+    option.textContent = method;
+    methodSelect.appendChild(option);
+  }
+
+  endpointInput.value = mock.endpoint;
+  methodSelect.value = mock.method;
+  dataInput.value = mock.data;
+
+  endpointInput.addEventListener('input', () => {
+    mock.endpoint = endpointInput.value;
+    updateJsonPreview();
+  });
+  methodSelect.addEventListener('change', () => {
+    mock.method = methodSelect.value;
+    updateJsonPreview();
+  });
+  dataInput.addEventListener('input', () => {
+    mock.data = dataInput.value;
+    updateJsonPreview();
+  });
+  duplicateBtn.addEventListener('click', () => duplicateMock(mock.id));
+  removeBtn.addEventListener('click', () => removeMock(mock.id));
+
+  mocksById.set(mock.id, { el: blockEl, endpointInput });
+  return blockEl;
+}
+
+function addMock({ focus = false } = {}) {
+  const mock = createMock();
+  scenario.mocks.push(mock);
+  mocksListEl.appendChild(createMockElement(mock));
+  updateJsonPreview();
+  if (focus) mocksById.get(mock.id).endpointInput.focus();
+  return mock;
+}
+
+function duplicateMock(mockId) {
+  const index = scenario.mocks.findIndex((m) => m.id === mockId);
+  if (index === -1) return;
+
+  const original = scenario.mocks[index];
+  const clone = { ...original, id: nextMockId() };
+  scenario.mocks.splice(index + 1, 0, clone);
+  mocksById.get(mockId).el.after(createMockElement(clone));
+  updateJsonPreview();
+}
+
+function removeMock(mockId) {
+  const index = scenario.mocks.findIndex((m) => m.id === mockId);
+  if (index === -1) return;
+
+  scenario.mocks.splice(index, 1);
+  const refs = mocksById.get(mockId);
+  if (refs) {
+    refs.el.remove();
+    mocksById.delete(mockId);
+  }
+  updateJsonPreview();
+}
+
+function clearMocks() {
+  scenario.mocks = [];
+  mocksListEl.innerHTML = '';
+  mocksById.clear();
+}
+
+/* ==========================================================================
    LOGIN AND NAVIGATION (fixed, created once alongside the first Test/Tests
    scaffold) — pure metadata for the agent, never removable, never part of
    the describe/test structure.
@@ -1068,6 +1188,7 @@ function clearAll() {
   scenario.scenarioDescription = '';
   scenarioDescriptionInput.value = '';
 
+  clearMocks();
   resetDescribeOnly();
   updateModeButtonsVisibility();
   updateJsonPreview();
@@ -1105,6 +1226,7 @@ function buildExportText() {
   const emitLeaf = (leaf, level, isLast) => {
     emit(level, '{');
     emit(level + 1, `"action": ${serializeScalar(leaf.action)},`);
+    emit(level + 1, `"customName": ${serializeScalar(getFieldConfig(leaf.action).customName ? leaf.customName : null)},`);
     emit(level + 1, `"target": ${serializeScalar(leaf.target)},`);
     emit(level + 1, `"selection": ${serializeScalar(leaf.selection)},`);
     emit(level + 1, `"value": ${serializeScalar(leaf.value)},`);
@@ -1153,6 +1275,21 @@ function buildExportText() {
     emit(1, '},');
   } else {
     emit(1, '"loginAndNavigation": null,');
+  }
+
+  // Endpoints and their mocked data — also metadata for the agent, also
+  // outside "describe". One repeated "mock" key per mock, same convention
+  // as "test".
+  if (scenario.mocks.length === 0) {
+    emit(1, '"mock": null,');
+  } else {
+    for (const mock of scenario.mocks) {
+      emit(1, '"mock": {');
+      emit(2, `"endpoint": ${serializeScalar(mock.endpoint)},`);
+      emit(2, `"method": ${serializeScalar(mock.method)},`);
+      emit(2, `"data": ${serializeScalar(mock.data)}`);
+      emit(1, '},');
+    }
   }
 
   emit(1, '"describe": {');
@@ -1212,6 +1349,7 @@ function snapshotGroup(group) {
     removable: group.removable,
     actions: group.actions.map((leaf) => ({
       action: leaf.action,
+      customName: leaf.customName,
       target: leaf.target,
       selection: leaf.selection,
       value: leaf.value,
@@ -1228,6 +1366,7 @@ function buildSnapshot() {
     scenarioDescription: scenario.scenarioDescription,
     mode: scenario.mode,
     loginAndNavigation: scenario.loginAndNavigation ? { ...scenario.loginAndNavigation } : null,
+    mocks: scenario.mocks.map((mock) => ({ endpoint: mock.endpoint, method: mock.method, data: mock.data })),
     beforeEach: scenario.beforeEach ? scenario.beforeEach.map(snapshotGroup) : null,
     tests: scenario.tests.map((test) => ({
       title: test.title,
@@ -1262,6 +1401,7 @@ function restoreLeaf(raw, kind, where) {
   return {
     id: kind === 'assertion' ? nextAssertionId() : nextActionId(),
     action: raw.action,
+    customName: getFieldConfig(raw.action).customName ? asText(raw.customName) : '',
     target: asText(raw.target),
     selection: getFieldConfig(raw.action).selection ? (raw.selection === 'multi' ? 'multi' : 'single') : null,
     value: asText(raw.value),
@@ -1284,6 +1424,13 @@ function restoreGroup(raw, where, allowedKinds) {
     actions: raw.actions.map((leaf, i) => restoreLeaf(leaf, raw.kind, `${where}, item ${i + 1}`)),
     removable: raw.removable !== false,
   };
+}
+
+function restoreMock(raw, index) {
+  if (!raw || !HTTP_METHODS.includes(raw.method)) {
+    throw new Error(`mock ${index + 1}: "${raw && raw.method}" is not a valid method`);
+  }
+  return { id: nextMockId(), endpoint: asText(raw.endpoint), method: raw.method, data: asText(raw.data) };
 }
 
 function restoreTest(raw, index) {
@@ -1332,9 +1479,18 @@ function loadSnapshot(snapshot) {
     throw new Error('a Test scaffold cannot have a Before Each');
   }
 
+  // Files saved before mocks existed simply have none.
+  const mocks = (Array.isArray(snapshot.mocks) ? snapshot.mocks : []).map(restoreMock);
+
   const login = snapshot.loginAndNavigation || {};
 
+  clearMocks();
   resetDescribeOnly();
+
+  for (const mock of mocks) {
+    scenario.mocks.push(mock);
+    mocksListEl.appendChild(createMockElement(mock));
+  }
 
   scenario.scenarioName = asText(snapshot.scenarioName);
   scenarioNameInput.value = scenario.scenarioName;
@@ -1446,6 +1602,8 @@ modeTestsBtn.addEventListener('click', () => {
 growTestBtn.addEventListener('click', () => growTestsScaffold());
 
 copyJsonBtn.addEventListener('click', copyJsonToClipboard);
+
+addMockBtn.addEventListener('click', () => addMock({ focus: true }));
 
 downloadSnapshotBtn.addEventListener('click', downloadSnapshot);
 uploadSnapshotBtn.addEventListener('click', () => snapshotFileInput.click());
