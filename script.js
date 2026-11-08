@@ -179,7 +179,6 @@ const scenario = {
   scenarioDescription: '',
   mode: null, // null | 'test' | 'tests'
   loginAndNavigation: null, // null, or { userType, unit, navigationFlow } — set once, fixed, alongside the first Test/Tests scaffold
-  mocks: [], // { id, endpoint, method, data } — optional, independent of mode
   beforeEach: null,
   tests: [],
 };
@@ -310,8 +309,6 @@ const downloadSnapshotBtn = document.getElementById('download-snapshot-btn');
 const uploadSnapshotBtn = document.getElementById('upload-snapshot-btn');
 const snapshotFileInput = document.getElementById('snapshot-file-input');
 const snapshotFeedbackEl = document.getElementById('snapshot-feedback');
-const mocksListEl = document.getElementById('mocks-list');
-const addMockBtn = document.getElementById('add-mock-btn');
 const mockTemplate = document.getElementById('mock-block-template');
 
 // Set once the beforeEach container is created (mode 'tests' only) — the
@@ -769,6 +766,7 @@ function createTestEntry({ removable }) {
     id: nextTestId(),
     title: '',
     note: '',
+    mocks: [],
     steps: [createExtraActionGroup(), createFixedAssertionGroup()],
     removable,
   };
@@ -791,6 +789,8 @@ function createTestElement(test) {
   const duplicateBtn = blockEl.querySelector('.btn-duplicate-test');
   const removeBtn = blockEl.querySelector('.btn-remove-test');
   const listEl = blockEl.querySelector('.test-steps-list');
+  const mocksListEl = blockEl.querySelector('.test-mocks-list');
+  const addMockBtn = blockEl.querySelector('.btn-add-mock-block');
   const addActionBtn = blockEl.querySelector('.btn-add-action-block');
   const addAssertionBtn = blockEl.querySelector('.btn-add-assertion-block');
 
@@ -812,7 +812,12 @@ function createTestElement(test) {
     removeBtn.hidden = true;
   }
 
-  testsById.set(test.id, { el: blockEl, titleInput, listEl });
+  testsById.set(test.id, { el: blockEl, titleInput, listEl, mocksListEl });
+
+  for (const mock of test.mocks) {
+    mocksListEl.appendChild(createMockElement(test, mock));
+  }
+  addMockBtn.addEventListener('click', () => addMock(test, { focus: true }));
 
   for (const group of test.steps) {
     listEl.appendChild(createBlockElement(group));
@@ -857,6 +862,7 @@ function cloneTest(test) {
     id: nextTestId(),
     title: test.title,
     note: test.note,
+    mocks: test.mocks.map((mock) => ({ ...mock, id: nextMockId() })),
     steps: test.steps.map(cloneGroup),
     removable: true,
   };
@@ -890,6 +896,9 @@ function removeTest(testId) {
   if (scenario.tests[index].removable === false) return;
 
   const [test] = scenario.tests.splice(index, 1);
+  for (const mock of test.mocks) {
+    mocksById.delete(mock.id);
+  }
   for (const group of test.steps) {
     for (const item of group.actions) {
       rowsById.delete(item.id);
@@ -967,9 +976,9 @@ function removeBeforeEach() {
 
 /* ==========================================================================
    MOCKS (endpoint + method + mocked data)
-   Optional, repeatable, independent of Test/Tests mode — so unlike the
-   Login and Navigation block it isn't reset by a mode switch, only by
-   Clear all or a load.
+   Optional and repeatable, and always inside one test (test.mocks) —
+   they're setup for that test's actions, not something the whole
+   scenario shares.
    ========================================================================== */
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
@@ -978,7 +987,7 @@ function createMock() {
   return { id: nextMockId(), endpoint: '', method: 'GET', data: '' };
 }
 
-function createMockElement(mock) {
+function createMockElement(test, mock) {
   const fragment = mockTemplate.content.cloneNode(true);
   const blockEl = fragment.querySelector('.mock-block');
   blockEl.dataset.mockId = mock.id;
@@ -1012,50 +1021,43 @@ function createMockElement(mock) {
     mock.data = dataInput.value;
     updateJsonPreview();
   });
-  duplicateBtn.addEventListener('click', () => duplicateMock(mock.id));
-  removeBtn.addEventListener('click', () => removeMock(mock.id));
+  duplicateBtn.addEventListener('click', () => duplicateMock(test, mock.id));
+  removeBtn.addEventListener('click', () => removeMock(test, mock.id));
 
   mocksById.set(mock.id, { el: blockEl, endpointInput });
   return blockEl;
 }
 
-function addMock({ focus = false } = {}) {
+function addMock(test, { focus = false } = {}) {
   const mock = createMock();
-  scenario.mocks.push(mock);
-  mocksListEl.appendChild(createMockElement(mock));
+  test.mocks.push(mock);
+  testsById.get(test.id).mocksListEl.appendChild(createMockElement(test, mock));
   updateJsonPreview();
   if (focus) mocksById.get(mock.id).endpointInput.focus();
   return mock;
 }
 
-function duplicateMock(mockId) {
-  const index = scenario.mocks.findIndex((m) => m.id === mockId);
+function duplicateMock(test, mockId) {
+  const index = test.mocks.findIndex((m) => m.id === mockId);
   if (index === -1) return;
 
-  const original = scenario.mocks[index];
-  const clone = { ...original, id: nextMockId() };
-  scenario.mocks.splice(index + 1, 0, clone);
-  mocksById.get(mockId).el.after(createMockElement(clone));
+  const clone = { ...test.mocks[index], id: nextMockId() };
+  test.mocks.splice(index + 1, 0, clone);
+  mocksById.get(mockId).el.after(createMockElement(test, clone));
   updateJsonPreview();
 }
 
-function removeMock(mockId) {
-  const index = scenario.mocks.findIndex((m) => m.id === mockId);
+function removeMock(test, mockId) {
+  const index = test.mocks.findIndex((m) => m.id === mockId);
   if (index === -1) return;
 
-  scenario.mocks.splice(index, 1);
+  test.mocks.splice(index, 1);
   const refs = mocksById.get(mockId);
   if (refs) {
     refs.el.remove();
     mocksById.delete(mockId);
   }
   updateJsonPreview();
-}
-
-function clearMocks() {
-  scenario.mocks = [];
-  mocksListEl.innerHTML = '';
-  mocksById.clear();
 }
 
 /* ==========================================================================
@@ -1167,6 +1169,7 @@ function resetDescribeOnly() {
   rowsById.clear();
   testsById.clear();
   blocksById.clear();
+  mocksById.clear();
 }
 
 let pendingModeSwitch = null;
@@ -1188,7 +1191,6 @@ function clearAll() {
   scenario.scenarioDescription = '';
   scenarioDescriptionInput.value = '';
 
-  clearMocks();
   resetDescribeOnly();
   updateModeButtonsVisibility();
   updateJsonPreview();
@@ -1252,6 +1254,20 @@ function buildExportText() {
     emit(level, '"test": {');
     emit(level + 1, `"title": ${serializeScalar(test.title)},`);
     emit(level + 1, `"note": ${serializeScalar(test.note)},`);
+    // This test's own mocked endpoints, ahead of its steps since they're
+    // setup for them. One repeated "mock" key per mock, same convention
+    // as "test" at the top.
+    if (test.mocks.length === 0) {
+      emit(level + 1, '"mock": null,');
+    } else {
+      for (const mock of test.mocks) {
+        emit(level + 1, '"mock": {');
+        emit(level + 2, `"endpoint": ${serializeScalar(mock.endpoint)},`);
+        emit(level + 2, `"method": ${serializeScalar(mock.method)},`);
+        emit(level + 2, `"data": ${serializeScalar(mock.data)}`);
+        emit(level + 1, '},');
+      }
+    }
     test.steps.forEach((group, i) => {
       emitGroup(group, level + 1, i === test.steps.length - 1);
     });
@@ -1275,21 +1291,6 @@ function buildExportText() {
     emit(1, '},');
   } else {
     emit(1, '"loginAndNavigation": null,');
-  }
-
-  // Endpoints and their mocked data — also metadata for the agent, also
-  // outside "describe". One repeated "mock" key per mock, same convention
-  // as "test".
-  if (scenario.mocks.length === 0) {
-    emit(1, '"mock": null,');
-  } else {
-    for (const mock of scenario.mocks) {
-      emit(1, '"mock": {');
-      emit(2, `"endpoint": ${serializeScalar(mock.endpoint)},`);
-      emit(2, `"method": ${serializeScalar(mock.method)},`);
-      emit(2, `"data": ${serializeScalar(mock.data)}`);
-      emit(1, '},');
-    }
   }
 
   emit(1, '"describe": {');
@@ -1366,12 +1367,12 @@ function buildSnapshot() {
     scenarioDescription: scenario.scenarioDescription,
     mode: scenario.mode,
     loginAndNavigation: scenario.loginAndNavigation ? { ...scenario.loginAndNavigation } : null,
-    mocks: scenario.mocks.map((mock) => ({ endpoint: mock.endpoint, method: mock.method, data: mock.data })),
     beforeEach: scenario.beforeEach ? scenario.beforeEach.map(snapshotGroup) : null,
     tests: scenario.tests.map((test) => ({
       title: test.title,
       note: test.note,
       removable: test.removable,
+      mocks: test.mocks.map((mock) => ({ endpoint: mock.endpoint, method: mock.method, data: mock.data })),
       steps: test.steps.map(snapshotGroup),
     })),
   };
@@ -1426,9 +1427,9 @@ function restoreGroup(raw, where, allowedKinds) {
   };
 }
 
-function restoreMock(raw, index) {
+function restoreMock(raw, where) {
   if (!raw || !HTTP_METHODS.includes(raw.method)) {
-    throw new Error(`mock ${index + 1}: "${raw && raw.method}" is not a valid method`);
+    throw new Error(`${where}: "${raw && raw.method}" is not a valid method`);
   }
   return { id: nextMockId(), endpoint: asText(raw.endpoint), method: raw.method, data: asText(raw.data) };
 }
@@ -1442,6 +1443,8 @@ function restoreTest(raw, index) {
     id: nextTestId(),
     title: asText(raw.title),
     note: asText(raw.note),
+    // Files saved before mocks existed simply have none.
+    mocks: (Array.isArray(raw.mocks) ? raw.mocks : []).map((mock, i) => restoreMock(mock, `${where}, mock ${i + 1}`)),
     steps: raw.steps.map((group, i) => restoreGroup(group, `${where}, group ${i + 1}`, ['action', 'assertion'])),
     removable: raw.removable !== false,
   };
@@ -1479,18 +1482,9 @@ function loadSnapshot(snapshot) {
     throw new Error('a Test scaffold cannot have a Before Each');
   }
 
-  // Files saved before mocks existed simply have none.
-  const mocks = (Array.isArray(snapshot.mocks) ? snapshot.mocks : []).map(restoreMock);
-
   const login = snapshot.loginAndNavigation || {};
 
-  clearMocks();
   resetDescribeOnly();
-
-  for (const mock of mocks) {
-    scenario.mocks.push(mock);
-    mocksListEl.appendChild(createMockElement(mock));
-  }
 
   scenario.scenarioName = asText(snapshot.scenarioName);
   scenarioNameInput.value = scenario.scenarioName;
@@ -1602,8 +1596,6 @@ modeTestsBtn.addEventListener('click', () => {
 growTestBtn.addEventListener('click', () => growTestsScaffold());
 
 copyJsonBtn.addEventListener('click', copyJsonToClipboard);
-
-addMockBtn.addEventListener('click', () => addMock({ focus: true }));
 
 downloadSnapshotBtn.addEventListener('click', downloadSnapshot);
 uploadSnapshotBtn.addEventListener('click', () => snapshotFileInput.click());
