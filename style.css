@@ -174,6 +174,11 @@ label {
   font-weight: 500;
 }
 
+.field-custom-name {
+  flex: 1 1 180px;
+  min-width: 140px;
+}
+
 .field-target {
   flex: 1 1 200px;
   min-width: 120px;
@@ -715,6 +720,94 @@ label {
 }
 
 /* ==========================================================================
+   Endpoints and mocks
+   ========================================================================== */
+
+.mocks-section {
+  padding: 16px;
+}
+
+.mocks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mocks-list:empty {
+  margin-bottom: 0;
+}
+
+.mock-block {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.mock-block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mock-block-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+  background: #e2e8f0;
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+
+.mock-endpoint {
+  flex: 1 1 auto;
+  min-width: 120px;
+  padding: 6px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 14px;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.mock-method {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  color: #1a1d21;
+}
+
+.mock-data {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  background: #fff;
+  color: #1a1d21;
+  resize: vertical;
+}
+
+.btn-remove-mock {
+  color: #b3261e;
+  border-color: #e3b3b0;
+}
+
+.btn-remove-mock:hover {
+  background: #fbeceb;
+}
+
+/* ==========================================================================
    Test Code Builder — namespaced under .cb- so nothing here can collide
    with the Test Scenario Builder's own styles.
    ========================================================================== */
@@ -877,6 +970,7 @@ label {
   }
 
   .field-action,
+  .field-custom-name,
   .field-target,
   .field-selection,
   .field-value {

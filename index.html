@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Test Scenario Builder</title>
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 
@@ -31,6 +31,18 @@
 
       <label for="scenario-description">Description</label>
       <textarea id="scenario-description" rows="2" placeholder="What this scenario covers"></textarea>
+    </section>
+
+    <!-- Endpoints and mocked data the scenario relies on. Optional and
+         independent of Test/Tests mode, so it's always here. Metadata for
+         the agent (Arrange, not Act/Assert), so it exports outside
+         "describe", next to loginAndNavigation. -->
+    <section class="mocks-section">
+      <h2>Endpoints and mocks</h2>
+      <div id="mocks-list" class="mocks-list"></div>
+      <div class="list-controls">
+        <button type="button" id="add-mock-btn" class="btn btn-add-test">+ Mock</button>
+      </div>
     </section>
 
     <!-- Enforces Act + Assert only (Arrange is left to the agent that reads
@@ -204,6 +216,21 @@
     </div>
   </dialog>
 
+  <!-- Mock: one endpoint, the HTTP method it answers, and the data it
+       returns (free text — usually a JSON body, written as-is). -->
+  <template id="mock-block-template">
+    <div class="mock-block" data-mock-id="">
+      <div class="mock-block-header">
+        <span class="mock-block-badge">Mock</span>
+        <input type="text" class="mock-endpoint" placeholder="Endpoint (e.g. /api/cart)">
+        <select class="mock-method"></select>
+        <button type="button" class="btn btn-duplicate-mock">Duplicate</button>
+        <button type="button" class="btn btn-icon btn-remove-mock" title="Remove mock">&times;</button>
+      </div>
+      <textarea class="mock-data" rows="3" placeholder="Mocked data (e.g. {&quot;items&quot;: []})"></textarea>
+    </div>
+  </template>
+
   <!-- Row template, cloned by JS for each leaf action/assertion. Carries
        its own small "note" toggle, same as a block/test, so a note can be
        pinned to one specific step rather than the group as a whole. -->
@@ -213,6 +240,8 @@
         <span class="step-number"></span>
 
         <select class="field field-action" data-field="action"></select>
+
+        <input type="text" class="field field-custom-name" data-field="custom-name" placeholder="name" hidden>
 
         <input type="text" class="field field-target" data-field="target" placeholder="target (e.g. #submit-button)">
 
@@ -364,7 +393,7 @@
 
   <!-- Cache-busting query param: bump this whenever script.js changes, so
        browsers don't keep serving a stale cached copy during development. -->
-  <script src="script.js?v=41"></script>
+  <script src="script.js?v=42"></script>
   <script src="tabs.js?v=1"></script>
   <script src="code-builder.js?v=7"></script>
 </body>
