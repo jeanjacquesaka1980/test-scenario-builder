@@ -680,69 +680,10 @@ label {
    Export
    ========================================================================== */
 
-.export-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid #e0e2e6;
-  margin-bottom: 12px;
-}
-
-.export-tab-btn {
-  cursor: pointer;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: #666;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: -1px;
-}
-
-.export-tab-btn:hover {
-  color: #1a1d21;
-}
-
-.export-tab-btn-active {
-  color: #1a5fb4;
-  border-bottom-color: #1a5fb4;
-}
-
-.yaml-app-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-  font-size: 13px;
-  color: #444;
-}
-
-.yaml-app-details {
+.snapshot-hint {
+  margin: 0 0 10px 0;
   font-size: 12px;
   color: #666;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  margin: 4px 0 12px 0;
-}
-
-.yaml-command-label {
-  display: block;
-  margin-top: 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #555;
-}
-
-.yaml-command-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.yaml-command-preview {
-  flex: 1 1 auto;
-  max-height: none;
-  margin: 0;
 }
 
 .export-buttons {
@@ -755,6 +696,10 @@ label {
 .copy-feedback {
   font-size: 12px;
   color: #1a7f37;
+}
+
+.copy-feedback.is-error {
+  color: #b3261e;
 }
 
 .json-preview {
