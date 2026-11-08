@@ -692,12 +692,8 @@ label {
 }
 
 /* ==========================================================================
-   Endpoints and mocks
+   Mocks (live inside a test)
    ========================================================================== */
-
-.mocks-section {
-  padding: 16px;
-}
 
 .mocks-list {
   display: flex;
@@ -768,6 +764,17 @@ label {
   background: #fff;
   color: #1a1d21;
   resize: vertical;
+}
+
+.btn-add-mock-block {
+  flex: 1 1 160px;
+  border-style: dashed;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.btn-add-mock-block:hover {
+  background: #f1f5f9;
 }
 
 .btn-remove-mock {
